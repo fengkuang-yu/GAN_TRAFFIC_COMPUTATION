@@ -20,6 +20,7 @@ from keras.layers import Input, Dense, Reshape, Flatten
 from keras.layers.advanced_activations import LeakyReLU
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
+from keras.models import load_model
 from tensorflow.examples.tutorials.mnist import input_data
 
 
@@ -249,9 +250,12 @@ class GAN():
                 axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
                 axs[i, j].axis('off')
                 cnt += 1
-        fig.savefig("D:/桌面/Generated_images/GAN_epoch%d.png" % epoch)
+        fig.savefig("generated_images/GAN_epoch%d.png" % epoch)
         plt.close()
 
+    def save_model(self):
+        self.discriminator.save(r'saved_model\GAN_discriminator.h5')
+        self.generator.save(r'saved_model\GAN_generator.h5')
 
 class WGAN(GAN):
     def train(self, epochs, batch_size=128, sample_interval=50):
@@ -277,7 +281,8 @@ NetParam = namedtuple('NetParam', ['MODEL',  # dcgan, wgan, or wgan-gp
 
 if __name__ == '__main__':
     gan = GAN()
-    gan.train(epochs=30000, batch_size=32, sample_interval=200)
+    gan.train(epochs=100, batch_size=128, sample_interval=200)
+    gan.save_model()
     #
     # # read mnist and set hyper-parameters
     # mnist = input_data.read_data_sets("./MNIST_data/", one_hot=True)
