@@ -9,6 +9,7 @@
 """
 
 import os
+import datetime
 from collections import namedtuple  # 使用namedtuple存放神经网络的超参数
 
 import keras
@@ -85,7 +86,7 @@ class LossHistory(keras.callbacks.Callback):
         self.losses['epoch'].append(logs.get('loss'))
         self.val_loss['epoch'].append(logs.get('val_loss'))
 
-    def loss_plot(self, loss_type, param):
+    def loss_plot(self, loss_type):
         iters = range(len(self.losses[loss_type]))
         plt.figure()
         # loss
@@ -97,10 +98,8 @@ class LossHistory(keras.callbacks.Callback):
         plt.xlabel(loss_type, fontsize=14)
         plt.ylabel('loss', fontsize=14)
         plt.legend(loc="upper right", fontsize=14)
-        plt.savefig(os.path.join(param.file_path, 'figure\\',
-                                 'loss_ST={}_{}_pred_time{}.pdf'.format(param.loop_num,
-                                                                        param.time_intervals,
-                                                                        5 * (param.predict_intervals + 1))))
+        time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        plt.savefig('generated_images\\loss\\'+time+'.pdf')
 
 
 class GAN():

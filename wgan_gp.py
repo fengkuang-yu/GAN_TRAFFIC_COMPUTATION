@@ -15,7 +15,6 @@ from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
 from keras.optimizers import RMSprop
 from functools import partial
-from tensorflow.examples.tutorials.mnist import input_data
 
 
 import keras.backend as K
@@ -237,7 +236,7 @@ class WGANGP():
                 axs[i,j].imshow(gen_imgs[cnt, :,:,0], cmap='gray')
                 axs[i,j].axis('off')
                 cnt += 1
-        fig.savefig("generated_images/GANgp_epoch%d.png" % epoch)
+        fig.savefig("generated_images/WGAN-gp/epoch%d.png" % epoch)
         # fig.savefig("images/mnist_%d.png" % epoch)
         plt.close()
 
