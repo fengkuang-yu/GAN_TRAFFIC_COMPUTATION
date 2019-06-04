@@ -8,10 +8,8 @@
 @Desc    :
 """
 
-import os
 import math
 
-import scipy.misc
 import numpy as np
 import matplotlib.pyplot as plt
 import keras.backend as K
@@ -25,56 +23,6 @@ from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
 from keras.optimizers import RMSprop
 from functools import partial
-
-
-def train_test_data(param):
-    """
-    生成训练和测试数据
-    :param param: 数据配置参数
-    :return: x_train, x_test, y_train, y_test
-    """
-    import pandas as pd
-    from sklearn.model_selection import train_test_split
-    
-    # 96表示的是159.57号检测线圈的数据
-    select_loop = [x for x in range(param.predict_loop - param.loop_num // 2,
-                                    param.predict_loop + param.loop_num // 2)]
-    
-    def data_pro(data, time_steps=None):
-        """
-        数据处理，将列状的数据拓展开为行形式
-
-        :param data: 输入交通数据
-        :param time_steps: 分割时间长度
-        :return: 处理过的数据
-        """
-        if time_steps is None:
-            time_steps = 1
-        size = data.shape
-        data = np.array(data)
-        temp = np.zeros((size[0] - time_steps + 1, size[1] * time_steps))
-        for i in range(data.shape[0] - time_steps + 1):
-            temp[i, :] = data[i:i + time_steps, :].flatten()
-        return temp
-    
-    data = pd.read_csv(os.path.join(param.file_path, 'data\\' 'data_all.csv'))
-    label = np.array(data.iloc[param.time_intervals + param.predict_intervals:, param.predict_loop]).reshape(-1, 1)
-    data = data.iloc[:, select_loop]
-    data = data_pro(data, time_steps=param.time_intervals)
-    data = data[: -(1 + param.predict_intervals)]
-    return train_test_split(data, label, test_size=0.2, shuffle=True, random_state=42)
-
-
-def save_images(images, size, path):
-    # 图片归一化
-    img = (images + 1.0) / 2.0
-    h, w = img.shape[1], img.shape[2]
-    merge_img = np.zeros((h * size[0], w * size[1], 3))
-    for idx, image in enumerate(images):
-        i = idx % size[1]
-        j = idx // size[1]
-        merge_img[j * h:j * h + h, i * w:i * w + w, :] = image
-    return scipy.misc.imsave(path, merge_img)
 
 
 class RandomWeightedAverage(_Merge):

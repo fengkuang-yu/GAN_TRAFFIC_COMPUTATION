@@ -1,0 +1,17 @@
+nput/
+*.csv
+*.gz
+*.pkl
+*~
+*.swp
+data/*
+output/*
+result*
+datasets/files/*
+*.jpg
+*.png
+graimg/
+gra_out/
+mnist_out/
+__pycache__/
+models/*.h5py
