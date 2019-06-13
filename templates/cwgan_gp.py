@@ -28,6 +28,12 @@ import numpy as np
 class RandomWeightedAverage(_Merge):
     """Provides a (random) weighted average between real and generated image samples"""
     def _merge_function(self, inputs):
+        """
+        inputs包含两个tensor，inputs[0],inputs[1]分别表示生成样本和真实样本，取这两类样本的中
+        间地带的样本作为惩罚区域。
+        :param inputs:
+        :return:
+        """
         global batch_size
         alpha = K.random_uniform((batch_size, 1, 1, 1))
         return (alpha * inputs[0]) + ((1 - alpha) * inputs[1])
@@ -83,8 +89,7 @@ class CWGANGP():
 
         # Use Python partial to provide loss function with additional
         # 'averaged_samples' argument
-        partial_gp_loss = partial(self.gradient_penalty_loss,
-                          averaged_samples=interpolated_img)
+        partial_gp_loss = partial(self.gradient_penalty_loss, veraged_samples=interpolated_img)
         partial_gp_loss.__name__ = 'gradient_penalty' # Keras requires function names
 
         self.critic_model = Model(inputs=[real_img, label, z_disc], outputs=[valid, fake, validity_interpolated])
@@ -123,15 +128,13 @@ class CWGANGP():
         # compute the euclidean norm by squaring ...
         gradients_sqr = K.square(gradients)
         #   ... summing over the rows ...
-        gradients_sqr_sum = K.sum(gradients_sqr,
-                                  axis=np.arange(1, len(gradients_sqr.shape)))
+        gradients_sqr_sum = K.sum(gradients_sqr, axis=np.arange(1, len(gradients_sqr.shape)))
         #   ... and sqrt
         gradient_l2_norm = K.sqrt(gradients_sqr_sum)
         # compute lambda * (1 - ||grad||)^2 still for each single sample
         gradient_penalty = K.square(1 - gradient_l2_norm)
         # return the mean as loss over all the batch samples
         return K.mean(gradient_penalty)
-
 
     def wasserstein_loss(self, y_true, y_pred):
         return K.mean(y_true * y_pred)
@@ -236,6 +239,7 @@ class CWGANGP():
             #  Train Generator
             # ---------------------
             sampled_labels = np.random.randint(0, self.nclasses, self.batch_size).reshape(-1, 1)
+            noise = np.random.normal(0, 1, (self.batch_size, self.latent_dim))
             g_loss = self.generator_model.train_on_batch([noise, sampled_labels], valid)
 
             # Plot the progress
