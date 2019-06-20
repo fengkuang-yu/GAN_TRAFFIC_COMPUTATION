@@ -127,7 +127,7 @@ class VAE:
         plt.imshow(figure, cmap='Greys_r')
         plt.savefig(r'hidden_with_output.pdf')
         
-    def plot_test(self, dir):
+    def plot_test(self, dir, plot_real=False):
         (x_train, y_train_), (x_test, y_test_) = mnist.load_data()
         x_test = x_test.astype('float32') / 255.
         x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
@@ -144,6 +144,17 @@ class VAE:
                 cnt += 1
         fig.savefig(dir + "generated_image.pdf")
         plt.close()
+        if plot_real == True:
+            r, c = 10, 10
+            fig, axs = plt.subplots(r, c)
+            cnt = 0
+            for i in range(r):
+                for j in range(c):
+                    axs[i, j].imshow(x_test[cnt, :].reshape(28, 28), cmap='gray')
+                    axs[i, j].axis('off')
+                    cnt += 1
+            fig.savefig(dir + "real_image.png")
+            plt.close()
 
 
 if __name__ == '__main__':
