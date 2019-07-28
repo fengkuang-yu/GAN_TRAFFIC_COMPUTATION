@@ -8,7 +8,6 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import tensorflow as tf
 from scipy.stats import norm
 
 from tqdm import tqdm
@@ -22,6 +21,7 @@ from keras import backend as K
 from keras.datasets import mnist
 
 # 根据需要动态分配显存
+import tensorflow as tf
 import keras.backend.tensorflow_backend as KTF
 
 config = tf.ConfigProto()
@@ -50,7 +50,7 @@ class AE:
         
         self.encoder = self.build_encoder()
         self.decoder = self.build_decoder()
-        self.ae = self.build_model()
+        self.model = self.build_model()
         self.data = self.load_data()
     
     def build_model(self):
@@ -75,15 +75,15 @@ class AE:
         img = Input(shape=self.img_shape)
         
         reshaped = Reshape((self.rows, self.cols))(img)
-        lstm_layer1 = Bidirectional(GRU(128, return_sequences=True)(reshaped))
+        lstm_layer1 = Bidirectional(GRU(128, return_sequences=True))(reshaped)
         norm_layer = BatchNormalization()(lstm_layer1)
-        lstm_layer2 = Bidirectional(GRU(128, return_sequences=True)(norm_layer))
+        lstm_layer2 = Bidirectional(GRU(128, return_sequences=True))(norm_layer)
         
         fc1 = Flatten()(lstm_layer2)
         fc2 = Dense(self.intermediate_dim)(fc1)
-        fc2 = LeakyReLU(alpha=0.2)(fc2)
-        f_out = Dense(self.latent_dim)(fc2)
-        return Model(img, f_out)
+        fc3 = LeakyReLU(alpha=0.2)(fc2)
+        f_out = Dense(self.latent_dim)(fc3)
+        return Model(img, f_out, name='encoder')
     
     def build_decoder(self):
         model = Sequential()
@@ -111,14 +111,14 @@ class AE:
         x_train = self.data
         
         for epoch in tqdm(range(self.epochs)):
-            idx = np.random.randint(0, x_train.shape[0] - 100, self.batch_size)
+            idx = np.random.randint(0, x_train.shape[0] - 2000, self.batch_size)
             real_imgs = x_train[idx]
             real_imgs = real_imgs.reshape(-1, *self.img_shape)
             masks = self.patch_mask_randomly(real_imgs)
-            loss = self.ae.train_on_batch([real_imgs, masks], None)
+            loss = self.model.train_on_batch([real_imgs, masks], None)
             
             if epoch % 200 == 0:
-                print('loss:{}'.format(loss))
+                # print('loss:{}'.format(loss))
                 self.plot_test('miss_percentage{}_epoch:{}.png'.format(self.missing_percentage, epoch))
     
     def hidden_distribution(self):
@@ -186,12 +186,12 @@ class AE:
         return masks
     
     def plot_test(self, file_name, ):
-        x_test = self.data[-100:]
-        idx = np.random.randint(0, 100, self.batch_size)
-        x_test = x_test[idx]
+        x_test = self.data[-2000:]
+        # idx = np.random.randint(0, 100, self.batch_size)
+        # x_test = x_test[idx]
         masks = self.patch_mask_randomly(x_test)
         corrupted = x_test * masks
-        gen_imgs = self.ae.predict([x_test, masks], batch_size=self.batch_size)
+        gen_imgs = self.model.predict([x_test, masks])
         gen_imgs = gen_imgs.reshape(-1, self.rows, self.cols, self.channels)
         x_flatten = x_test.reshape((-1, self.rows * self.cols * self.channels))
         g_flatten = gen_imgs.reshape((-1, self.rows * self.cols * self.channels))

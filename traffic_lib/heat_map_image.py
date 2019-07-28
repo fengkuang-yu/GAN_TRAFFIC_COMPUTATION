@@ -10,7 +10,7 @@ def plot_heat_map(array):
     cmap = sns.cubehelix_palette(start=1.5, rot=3, gamma=0.8, as_cmap=True)
     sns.heatmap(array, ax=ax, cmap=cmap)
     plt.imshow(array, cmap='gray')
-    ax.set_title('A working day traffic flow(10min)')
+    ax.set_title('A working day traffic flow(5min)')
     ax.set_ylabel('Time lags during a working day', fontsize=12)
     ax.set_xlabel('Loop Detector Number', fontsize=12)
     ax.xaxis.set_tick_params(rotation=90, labelsize=8)
@@ -18,7 +18,7 @@ def plot_heat_map(array):
     plt.show()
 
 
-flow_data_all = pd.read_csv(r'data_all.csv')
+flow_data_all = pd.read_csv(r'traffic_data/data_all.csv')
 display_day = 10
 image_array = flow_data_all.iloc[288*display_day:288*(display_day + 1), 1:]
 image_array = image_array.values

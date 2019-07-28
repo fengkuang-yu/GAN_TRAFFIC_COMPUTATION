@@ -38,8 +38,8 @@ class VAE_GAIN:
         self.img_shape = (self.rows, self.cols, self.channels)
         self.latent_dim = 100
         self.intermediate_dim = 256
-        self.gamma1 = 0.1
-        self.gamma2 = 100
+        self.gamma1 = 1
+        self.gamma2 = 1000
         self.lambda_d_penalty = 10
         self.epochs = 5000
         self.n_critic = 5
@@ -58,9 +58,11 @@ class VAE_GAIN:
     
     def build_model(self):
         real_x = Input(shape=self.img_shape, name='real_image')
+        masks = Input(shape=self.img_shape, name='masks')
         z_p = Input(shape=(self.latent_dim,), name='random_distribution')
         
-        z_mean, z_log_var = self.encoder(real_x)
+        masked_x = Lambda(lambda x: x[0] * x[1], output_shape=self.img_shape, )([real_x, masks])
+        z_mean, z_log_var = self.encoder(masked_x)
         z = Lambda(self.sampling, output_shape=(self.latent_dim,), name='re-sampling_layer')([z_mean, z_log_var])
         kl_loss = - 0.5 * K.sum(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var))
         
@@ -68,9 +70,10 @@ class VAE_GAIN:
         gen_x = self.decoder(z_p)
         interpolated_img = Lambda(self.random_weight_average, output_shape=self.img_shape,
                                   name='random_weight_average')([real_x, reconstruct_x])
-        
+        imputed_img = Lambda(lambda x: x[0] * x[1] + (1 - x[0]) * x[2], output_shape=self.img_shape,
+                             name='imputation_layer')([masks, real_x, reconstruct_x])
         real_valid, real_llike = self.critic(real_x)
-        rec_valid, rec_llike = self.critic(reconstruct_x)
+        rec_valid, rec_llike = self.critic(imputed_img)
         gen_valid, gen_llike = self.critic(gen_x)
         inter_valid, inter_llike = self.critic(interpolated_img)
         
@@ -85,7 +88,7 @@ class VAE_GAIN:
         self.encoder.trainable = True
         self.decoder.trainable = False
         self.critic.trainable = False
-        self.encoder_trainer = Model(inputs=real_x, outputs=[reconstruct_x, rec_llike], name='encoder')
+        self.encoder_trainer = Model([real_x, masks], [imputed_img, rec_llike], name='encoder')
         self.encoder_trainer.add_loss(kl_loss + reconstruct_llike_loss)
         self.encoder_trainer.compile(optimizer=self.optimizer)
         # self.encoder.summary()
@@ -94,7 +97,7 @@ class VAE_GAIN:
         self.encoder.trainable = False
         self.decoder.trainable = True
         self.critic.trainable = False
-        self.decoder_trainer = Model(inputs=[real_x, z_p], outputs=[rec_llike, rec_valid, discriminate_loss], name='decoder')
+        self.decoder_trainer = Model([real_x, masks, z_p], [rec_llike, rec_valid, discriminate_loss], name='decoder')
         self.decoder_trainer.add_loss(self.gamma1 * reconstruct_llike_loss - self.gamma2 * discriminate_loss)
         self.decoder_trainer.compile(optimizer=self.optimizer)
         # self.decoder_trainer.summary()
@@ -103,7 +106,7 @@ class VAE_GAIN:
         self.encoder.trainable = False
         self.decoder.trainable = False
         self.critic.trainable = True
-        self.critic_trainer = Model(inputs=[real_x, z_p], outputs=[discriminate_loss], name='critic')
+        self.critic_trainer = Model([real_x, masks, z_p], [discriminate_loss], name='critic')
         self.critic_trainer.add_loss(discriminate_loss)
         self.critic_trainer.compile(optimizer=self.optimizer, )
         # self.critic_trainer.summary()
@@ -182,15 +185,19 @@ class VAE_GAIN:
             idx = np.random.randint(0, x_train.shape[0], self.batch_size)
             real_imgs = x_train[idx]
             real_imgs = real_imgs.reshape(-1, *self.img_shape)
+            masks = self.mask_randomly(real_imgs)
             z_p = np.random.normal(0, 1, (self.batch_size, self.latent_dim))
             
-            critic_loss = self.critic_trainer.train_on_batch([real_imgs, z_p], None)
-            encoder_loss = self.encoder_trainer.train_on_batch(real_imgs, None)
-            decoder_loss = self.decoder_trainer.train_on_batch([real_imgs, z_p], None)
+            critic_loss = self.critic_trainer.train_on_batch([real_imgs, masks, z_p], None)
+            encoder_loss = self.encoder_trainer.train_on_batch([real_imgs, masks], None)
+            decoder_loss = self.decoder_trainer.train_on_batch([real_imgs, masks, z_p], None)
             
             if epoch % 200 == 0:
                 print('encoder_loss:{};decoder_loss:{};critic_loss:{}'.format(encoder_loss, decoder_loss, critic_loss))
                 self.plot_test('epoch:{}.png'.format(epoch))
+    
+    def test(self):
+        pass
     
     def random_weight_average(self, args):
         x_real, x_rec = args
@@ -234,41 +241,64 @@ class VAE_GAIN:
         nll = 0.5 * np.log(2 * np.pi) + 0.5 * K.square(y_pred - y_true)
         axis = tuple(range(1, len(K.int_shape(y_true))))
         return K.mean(K.sum(nll, axis=axis), axis=-1)
-        
+    
     def sampling(self, args):
         z_mean, z_log_var = args
         epsilon = K.random_normal(shape=K.shape(z_mean))
         return z_mean + K.exp(z_log_var / 2) * epsilon
     
-    def plot_test(self, file_name, plot_real=False):
+    def patch_mask_randomly(self, images, mask_height=10, mask_width=10, ):
+        """
+        接收一个四维的矩阵，返回已经处理过的矩阵
+        :param images:
+        :param mask_height:
+        :param mask_width:
+        :return:
+        """
+        img_shape = images.shape
+        img_rows = img_shape[1]
+        img_width = img_shape[2]
+        mask_rows_start = np.random.randint(0, img_rows - mask_height, img_shape[0])
+        mask_rows_end = mask_rows_start + mask_height
+        mask_cols_start = np.random.randint(0, img_width - mask_width, img_shape[0])
+        mask_cols_end = mask_cols_start + mask_width
+        
+        masks = np.ones_like(images)
+        for i, img in enumerate(images):
+            _y1, _y2, _x1, _x2 = mask_rows_start[i], mask_rows_end[i], mask_cols_start[i], mask_cols_end[i],
+            masks[i][_y1:_y2, _x1:_x2, :] = 0
+        return masks
+    
+    def mask_randomly(self, percentage=0.2):
+        random_mask = np.random.random(size=(self.batch_size, self.rows, self.cols, self.channels))
+        random_mask[random_mask > percentage] = 1
+        random_mask[random_mask != 1] = 0
+        return random_mask
+    
+    def plot_test(self, file_name, ):
         (_, _), (x_test, y_test_) = mnist.load_data()
         x_test = x_test.astype('float32') / 255.
         x_test = x_test.reshape((len(x_test), np.prod(x_test.shape[1:])))
-        x_test = x_test.reshape(-1, self.rows, self.cols, self.channels)
-        gen_imgs = self.encoder_trainer.predict(x_test, batch_size=self.batch_size)[0]
+        x_test = x_test.reshape(-1, self.rows, self.cols, self.channels)[:100]
+        masks = self.mask_randomly()
+        corrupted = x_test * masks
+        gen_imgs = self.encoder_trainer.predict([x_test, masks], batch_size=self.batch_size)[0]
         gen_imgs = gen_imgs.reshape(-1, self.rows, self.cols, self.channels)
         
-        r, c = 10, 10
-        fig, axs = plt.subplots(r, c)
-        cnt = 0
-        for i in range(r):
-            for j in range(c):
-                axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
-                axs[i, j].axis('off')
-                cnt += 1
+        r, c = 2, 10
+        fig, axs = plt.subplots(r * 4 + 1, c)
+        for j in range(c):
+            for index, temp in enumerate([x_test, masks, corrupted, gen_imgs]):
+                axs[index, j].imshow(temp[j, :, :, 0], cmap='gray')
+                axs[index, j].axis('off')
+        for j in range(c):
+            axs[4, j].axis('off')
+        for j in range(c):
+            for index, temp in enumerate([x_test, masks, corrupted, gen_imgs]):
+                axs[5 + index, j].imshow(temp[c + j, :, :, 0], cmap='gray')
+                axs[5 + index, j].axis('off')
         fig.savefig(os.path.join(os.getcwd(), 'generated_imgs', file_name))
         plt.close()
-        if plot_real == True:
-            r, c = 10, 10
-            fig, axs = plt.subplots(r, c)
-            cnt = 0
-            for i in range(r):
-                for j in range(c):
-                    axs[i, j].imshow(x_test[cnt, :, :, 0], cmap='gray')
-                    axs[i, j].axis('off')
-                    cnt += 1
-            fig.savefig(dir + "real_image.png")
-            plt.close()
 
 
 if __name__ == '__main__':
@@ -276,5 +306,5 @@ if __name__ == '__main__':
     vae_gan = VAE_GAIN()
     vae_gan.train()
     
-    # vae_gan.plot_test(dir)
+    vae_gan.plot_test(dir)
     # ccvae.hidden_distribution()

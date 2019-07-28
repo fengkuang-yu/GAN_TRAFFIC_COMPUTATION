@@ -38,29 +38,6 @@ def sample_images(self, epoch):
     # fig.savefig("images/mnist_%d.png" % epoch)
     plt.close()
 
-def corrupt_process_display(real, mask, corrupt, restore):
-    """
-    画出真实、掩码、损坏、修复四者对比
-    接收输入的维度都是四维[None, rows, cols, channels]
-    :param real:
-    :param mask:
-    :param corrupt:
-    :param restore:
-    :return:
-    """
-    r, c = 4, 6
-    fig, axs = plt.subplots(r, c)
-    for i in range(c):
-        axs[0, i].imshow(real[i, :, :, 0], cmap='gray')
-        # axs[0, i].axis('off')
-        axs[1, i].imshow(mask[i, :, :, 0], cmap='gray')
-        # axs[1, i].axis('off')
-        axs[2, i].imshow(corrupt[i, :, :, 0], cmap='gray')
-        # axs[2, i].axis('off')
-        axs[3, i].imshow(restore[i, :, :, 0], cmap='gray')
-        # axs[2, i].axis('off')
-    fig.tight_layout()
-    plt.show()
 
 def tsne_show(data):
     from sklearn.manifold import TSNE
