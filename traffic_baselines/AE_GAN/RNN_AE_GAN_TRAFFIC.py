@@ -1,4 +1,10 @@
 #!/usr/bin/env python
+#-*- coding:utf-8 -*-
+# author:lenovo
+# datetime:2019/8/17 15:13
+# software: PyCharm
+
+# !/usr/bin/env python
 # -*- coding:utf-8 -*-
 # author:lenovo
 # datetime:2019/7/20 9:32
@@ -31,7 +37,7 @@ KTF.set_session(session)
 
 # 配置日志
 logger = logging.getLogger(__name__)
-handler = logging.FileHandler(filename=os.path.join(os.getcwd(), 'test.log'), mode='w')
+handler = logging.StreamHandler()
 logger.setLevel(logging.INFO)
 handler.setFormatter(logging.Formatter("%(asctime)s %(filename)s %(levelname)s %(message)s", "%X"))
 logger.addHandler(handler)
@@ -59,9 +65,9 @@ class AE:
         self.encoder = self.build_encoder()
         self.decoder = self.build_decoder()
         self.model = self.build_model()
-        logger.info(" model ready!!! ")
-        self.train_data, self.test_data = self.load_data(data_path)
-        logger.info(" data ready!!! ")
+        logger.info("************* model ready!!! ")
+        self.data = self.load_data(data_path)
+        logger.info("************* data ready!!! ")
     
     def build_model(self):
         real_x = Input(shape=self.img_shape)
@@ -117,10 +123,31 @@ class AE:
         img = model(noise)
         
         return Model(noise, img)
+
+    def build_critic(self):
     
+        img = Input(shape=self.img_shape)
+        conv1 = Conv2D(32, kernel_size=3, strides=2, input_shape=self.img_shape, padding="same")(img)
+        # conv1 = BatchNormalization(momentum=0.8)(conv1)
+        conv1 = LeakyReLU(alpha=0.2)(conv1)
+    
+        conv2 = Conv2D(64, kernel_size=3, strides=2, padding="same")(conv1)
+        conv2 = ZeroPadding2D(padding=((0, 1), (0, 1)))(conv2)  # 判断是否需要填充
+        # conv2 = BatchNormalization(momentum=0.8)(conv2)
+        conv2 = LeakyReLU(alpha=0.2)(conv2)
+    
+        conv3 = Conv2D(128, kernel_size=3, strides=2, padding="same")(conv2)
+        # conv3 = BatchNormalization(momentum=0.8)(conv3)
+        conv3_output = LeakyReLU(alpha=0.2)(conv3)
+    
+        fc1 = Flatten()(conv3_output)
+        valid = Dense(1)(fc1)
+    
+        return Model(img, [valid, fc1])
+
     def train(self):
-        x_train = self.train_data
-        logger.info(" start training!!! ")
+        x_train = self.data
+        logger.info("************* start training!!! ")
         for epoch in tqdm(range(self.epochs)):
             idx = np.random.randint(0, x_train.shape[0] * (1 - self.test_percent), self.batch_size)
             real_imgs = x_train[idx]
@@ -129,20 +156,8 @@ class AE:
             loss = self.model.train_on_batch([real_imgs, masks], None)
             
             if epoch % 400 == 0:
-                x_test = self.test_data
-                idx = np.random.randint(0, x_test.shape[0], self.batch_size)
-                x_test = x_test[idx]
-                masks = self.patch_mask_randomly(x_test)
-                gen_imgs = self.model.predict([x_test, masks])
-                gen_imgs = gen_imgs.reshape(-1, self.rows, self.cols, self.channels)
-                x_flatten = x_test.reshape((-1, self.rows * self.cols * self.channels))
-                g_flatten = gen_imgs.reshape((-1, self.rows * self.cols * self.channels))
-                x_flatten = self.scalar.inverse_transform(x_flatten)
-                g_flatten = self.scalar.inverse_transform(g_flatten)
-                mape = np.sum(np.abs(g_flatten - x_flatten) / x_flatten) / np.sum(1 - masks)
-                mae = np.sum(np.abs(g_flatten - x_flatten)) / np.sum(1 - masks)
-                logger.info('mape:{};mae:{}'.format(mape, mae))
-                # self.plot_test('miss_percentage{}_epoch:{}.png'.format(self.missing_percentage, epoch))
+                # print('loss:{}'.format(loss))
+                self.plot_test('miss_percentage{}_epoch:{}.png'.format(self.missing_percentage, epoch))
     
     def mask_randomly(self, shape=None):
         if shape == None:
@@ -177,7 +192,7 @@ class AE:
         return masks
     
     def plot_test(self, file_name, ):
-        x_test = self.test_data
+        x_test = self.data[-int(self.data.shape[0] * self.test_percent):]
         # idx = np.random.randint(0, 100, self.batch_size)
         # x_test = x_test[idx]
         masks = self.patch_mask_randomly(x_test)
@@ -190,27 +205,18 @@ class AE:
         g_flatten = self.scalar.inverse_transform(g_flatten)
         mape = np.sum(np.abs(g_flatten - x_flatten) / x_flatten) / np.sum(1 - masks)
         mae = np.sum(np.abs(g_flatten - x_flatten)) / np.sum(1 - masks)
-        
-        def plot_data(fig_num):
-            idx = np.random.randint(0, self.test_data.shape[0], fig_num)
-            test_plt = x_test[idx]
-            corrupted_plt = corrupted[idx]
-            gen_plt = gen_imgs[idx]
-            for temp_test, temp_corr, temp_gen in zip(test_plt, corrupted_plt, gen_plt):
-                yield temp_test, temp_corr, temp_gen
-        
-        rows, columns = 2, 8
-        plot_data_instance = plot_data(rows * columns)
-        fig, axs = plt.subplots(rows * 3, columns, figsize=(8, 6))
-        for row in range(rows):
-            for col in range(columns):
-                temp = next(plot_data_instance)
-                axs[row * 3, col].imshow(temp[0][:,:,-1], cmap='gray')
-                axs[row * 3, col].axis('off')
-                axs[row * 3 + 1, col].imshow(temp[1][:,:,-1], cmap='gray')
-                axs[row * 3 + 1, col].axis('off')
-                axs[row * 3 + 2, col].imshow(temp[2][:,:,-1], cmap='gray')
-                axs[row * 3 + 2, col].axis('off')
+        r, c = 2, 10
+        fig, axs = plt.subplots(r * 4 + 1, c)
+        for j in range(c):
+            for index, temp in enumerate([x_test, masks, corrupted, gen_imgs]):
+                axs[index, j].imshow(temp[j, :, :, 0], cmap='gray')
+                axs[index, j].axis('off')
+        for j in range(c):
+            axs[4, j].axis('off')
+        for j in range(c):
+            for index, temp in enumerate([x_test, masks, corrupted, gen_imgs]):
+                axs[5 + index, j].imshow(temp[c + j, :, :, 0], cmap='gray')
+                axs[5 + index, j].axis('off')
         fig.suptitle('mape:{};mae:{}'.format(mape, mae))
         fig.savefig(os.path.join(os.getcwd(), 'generated_imgs', file_name))
         plt.close()
@@ -221,14 +227,7 @@ class AE:
         data = self.data_pro(data, time_steps=60)
         data = self.scalar.fit_transform(data)
         data = data.reshape(-1, *self.img_shape)
-        
-        # 将数据分为训练和测试数据
-        np.random.seed(15)
-        idx = np.random.randint(0, len(data), int(self.test_percent * len(data)))
-        x_test = data[idx]
-        x_train = data[list(set([x for x in range(len(data))]) - set(idx))]
-        
-        return x_train, x_test
+        return data
     
     def data_pro(self, data, time_steps=None):
         """
@@ -243,34 +242,21 @@ class AE:
         daily_average = data_daily.mean(axis=0)
         for temp in zip(*np.where(data_daily == 0)):
             data_daily[temp] = round(daily_average[temp[1:]])
-        
-        # 处理突变异常点，使用3-sigma准则
-        # TODO: 将异常点剔除
-        
-        
         data_daily = data_daily.reshape(-1, 60)
+        
         # 数据的训练和测试样本构造
         if time_steps is None:
             time_steps = 1
         size = data_daily.shape
-        res = np.zeros((size[0] - time_steps + 1, size[1] * time_steps))
+        temp = np.zeros((size[0] - time_steps + 1, size[1] * time_steps))
         for i in range(size[0] - time_steps + 1):
-            res[i, :] = data_daily[i:i + time_steps, :].flatten()
-        return res
+            temp[i, :] = data_daily[i:i + time_steps, :].flatten()
+        return temp
 
 
 if __name__ == '__main__':
     img_name = r'imputated.png'
-    data_path = r'F:\pycharm-workspace\GAN_TRAFFIC_COMPUTATION\traffic_data\data_all.csv'
+    data_path = r'traffic_data/data_all.csv'
     ae = AE(data_path)
-    # ae.train()
+    ae.train()
     ae.plot_test(img_name)
-    logger.info(' training finish')
-
-# figure = np.ones(shape=(25, 25))
-# figure_columns = 8
-# figure_rows = 6
-# interval = 1
-# total_fig_size = ((figure_columns - 1) * interval + figure.shape[0] * figure_columns,
-#                   (figure_rows - 1) * interval + figure.shape[1] * figure_rows)
-# total_fig = np.zeros(shape=total_fig_size)
