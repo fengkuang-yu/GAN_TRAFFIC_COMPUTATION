@@ -5,6 +5,8 @@
 # software: PyCharm
 
 import os
+import datetime
+import keras
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -31,13 +33,43 @@ KTF.set_session(session)
 
 # 配置日志
 logger = logging.getLogger(__name__)
-handler = logging.FileHandler(filename=os.path.join(os.getcwd(), 'test.log'), mode='w')
+handler = logging.FileHandler(filename=os.path.join(os.getcwd(), '{}.log'.format(__file__)), mode='w')
 logger.setLevel(logging.INFO)
 handler.setFormatter(logging.Formatter("%(asctime)s %(filename)s %(levelname)s %(message)s", "%X"))
 logger.addHandler(handler)
 
 # Tensorflow只打印error日志通知
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+
+# 写一个LossHistory类，保存loss和acc
+class LossHistory(keras.callbacks.Callback):
+    def on_train_begin(self, logs={}):
+        self.losses = {'batch': [], 'epoch': []}
+        self.val_loss = {'batch': [], 'epoch': []}
+    
+    def on_batch_end(self, batch, logs={}):
+        self.losses['batch'].append(logs.get('loss'))
+        self.val_loss['batch'].append(logs.get('val_loss'))
+    
+    def on_epoch_end(self, batch, logs={}):
+        self.losses['epoch'].append(logs.get('loss'))
+        self.val_loss['epoch'].append(logs.get('val_loss'))
+    
+    def loss_plot(self, loss_type):
+        iters = range(len(self.losses[loss_type]))
+        plt.figure()
+        # loss
+        plt.plot(iters, self.losses[loss_type], 'g', label='train')
+        if loss_type == 'epoch':
+            # val_loss
+            plt.plot(iters, self.val_loss[loss_type], 'k', label='validation')
+        plt.grid(True)
+        plt.xlabel(loss_type, fontsize=14)
+        plt.ylabel('loss', fontsize=14)
+        plt.legend(loc="upper right", fontsize=14)
+        time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        plt.savefig('generated_images\\loss\\' + time + '.pdf')
 
 
 class AE:
@@ -49,7 +81,7 @@ class AE:
         self.img_shape = (self.rows, self.cols, self.channels)
         self.latent_dim = 200
         self.intermediate_dim = 256
-        self.epochs = 10000
+        self.epochs = 10
         self.test_percent = 0.3
         self.optimizer = Adam()
         
@@ -78,7 +110,7 @@ class AE:
         
         ae.add_loss(xent_loss)
         ae.compile(optimizer=self.optimizer)
-        ae.summary()
+        # ae.summary()
         return ae
     
     def build_encoder(self):
@@ -103,14 +135,14 @@ class AE:
         model.add(Dense(32 * 15 * 15, activation="relu", input_dim=self.latent_dim))
         model.add(Reshape((15, 15, 32)))
         model.add(UpSampling2D())
-        model.add(Conv2D(128, kernel_size=4, padding="same"))
+        model.add(Conv2D(128, kernel_size=4, padding="same", data_format="channels_last"))
         # model.add(BatchNormalization(momentum=0.8))
         model.add(Activation("relu"))
         model.add(UpSampling2D())
-        model.add(Conv2D(64, kernel_size=4, padding="same"))
+        model.add(Conv2D(64, kernel_size=4, padding="same", data_format="channels_last"))
         # model.add(BatchNormalization(momentum=0.8))
         model.add(Activation("relu"))
-        model.add(Conv2D(self.channels, kernel_size=4, padding="same"))
+        model.add(Conv2D(self.channels, kernel_size=4, padding="same", data_format="channels_last"))
         model.add(Activation("sigmoid"))
         
         noise = Input(shape=(self.latent_dim,))
@@ -133,17 +165,28 @@ class AE:
                 idx = np.random.randint(0, x_test.shape[0], self.batch_size)
                 x_test = x_test[idx]
                 masks = self.patch_mask_randomly(x_test)
-                gen_imgs = self.model.predict([x_test, masks])
-                gen_imgs = gen_imgs.reshape(-1, self.rows, self.cols, self.channels)
-                x_flatten = x_test.reshape((-1, self.rows * self.cols * self.channels))
-                g_flatten = gen_imgs.reshape((-1, self.rows * self.cols * self.channels))
-                x_flatten = self.scalar.inverse_transform(x_flatten)
-                g_flatten = self.scalar.inverse_transform(g_flatten)
-                mape = np.sum(np.abs(g_flatten - x_flatten) / x_flatten) / np.sum(1 - masks)
-                mae = np.sum(np.abs(g_flatten - x_flatten)) / np.sum(1 - masks)
-                logger.info('mape:{};mae:{}'.format(mape, mae))
+                # 重复多次训练
+                gen_imgs1 = self.model.predict([x_test, masks])
+                gen_imgs2 = self.model.predict([gen_imgs1, np.ones_like(masks)])
+                gen_imgs3 = self.model.predict([gen_imgs2, np.ones_like(masks)])
+                mae1, mape1 = self.get_mae_and_mape(x_test, gen_imgs1, masks)
+                mae2, mape2 = self.get_mae_and_mape(x_test, gen_imgs2, masks)
+                mae3, mape3 = self.get_mae_and_mape(x_test, gen_imgs3, masks)
+                
+                logger.info('mape/mae: first round:{}/{}, '
+                            'second round{}/{}, '
+                            'third_round{}/{}'.format(mape1, mae1, mape2, mae2, mape3, mae3))
                 # self.plot_test('miss_percentage{}_epoch:{}.png'.format(self.missing_percentage, epoch))
     
+    def get_mae_and_mape(self, x_test, x_gen, x_mask):
+        x_flatten = x_test.reshape(-1, self.rows * self.cols * self.channels)
+        g_flatten = x_gen.reshape(-1, self.rows * self.cols * self.channels)
+        x_flatten = self.scalar.inverse_transform(x_flatten)
+        g_flatten = self.scalar.inverse_transform(g_flatten)
+        mape = np.sum(np.abs(g_flatten - x_flatten) / x_flatten) / np.sum(1 - x_mask)
+        mae = np.sum(np.abs(g_flatten - x_flatten)) / np.sum(1 - x_mask)
+        return mae, mape
+        
     def mask_randomly(self, shape=None):
         if shape == None:
             random_mask = np.random.random(size=(self.batch_size, self.rows, self.cols, self.channels))
@@ -176,41 +219,21 @@ class AE:
             masks[i][_y1:_y2, _x1:_x2, :] = 0
         return masks
     
-    def plot_test(self, file_name, ):
-        x_test = self.test_data
-        # idx = np.random.randint(0, 100, self.batch_size)
-        # x_test = x_test[idx]
-        masks = self.patch_mask_randomly(x_test)
-        corrupted = x_test * masks
-        gen_imgs = self.model.predict([x_test, masks])
-        gen_imgs = gen_imgs.reshape(-1, self.rows, self.cols, self.channels)
-        x_flatten = x_test.reshape((-1, self.rows * self.cols * self.channels))
-        g_flatten = gen_imgs.reshape((-1, self.rows * self.cols * self.channels))
-        x_flatten = self.scalar.inverse_transform(x_flatten)
-        g_flatten = self.scalar.inverse_transform(g_flatten)
-        mape = np.sum(np.abs(g_flatten - x_flatten) / x_flatten) / np.sum(1 - masks)
-        mae = np.sum(np.abs(g_flatten - x_flatten)) / np.sum(1 - masks)
-        
-        def plot_data(fig_num):
-            idx = np.random.randint(0, self.test_data.shape[0], fig_num)
-            test_plt = x_test[idx]
-            corrupted_plt = corrupted[idx]
-            gen_plt = gen_imgs[idx]
-            for temp_test, temp_corr, temp_gen in zip(test_plt, corrupted_plt, gen_plt):
-                yield temp_test, temp_corr, temp_gen
-        
+    def plot_test(self, file_name, x_test, x_corr, x_gen, x_mask):
+        mape, mae = self.get_mae_and_mape(x_test, x_gen, x_mask)
+        plot_data_instance = (x for x in zip(x_test, x_corr, x_gen))
         rows, columns = 2, 8
-        plot_data_instance = plot_data(rows * columns)
         fig, axs = plt.subplots(rows * 3, columns, figsize=(8, 6))
         for row in range(rows):
             for col in range(columns):
                 temp = next(plot_data_instance)
-                axs[row * 3, col].imshow(temp[0][:,:,-1], cmap='gray')
+                axs[row * 3, col].imshow(temp[0][:, :, -1], cmap='gray')
                 axs[row * 3, col].axis('off')
-                axs[row * 3 + 1, col].imshow(temp[1][:,:,-1], cmap='gray')
+                axs[row * 3 + 1, col].imshow(temp[1][:, :, -1], cmap='gray')
                 axs[row * 3 + 1, col].axis('off')
-                axs[row * 3 + 2, col].imshow(temp[2][:,:,-1], cmap='gray')
+                axs[row * 3 + 2, col].imshow(temp[2][:, :, -1], cmap='gray')
                 axs[row * 3 + 2, col].axis('off')
+        plt.subplots_adjust(wspace=10, hspace=10)
         fig.suptitle('mape:{};mae:{}'.format(mape, mae))
         fig.savefig(os.path.join(os.getcwd(), 'generated_imgs', file_name))
         plt.close()
@@ -247,7 +270,6 @@ class AE:
         # 处理突变异常点，使用3-sigma准则
         # TODO: 将异常点剔除
         
-        
         data_daily = data_daily.reshape(-1, 60)
         # 数据的训练和测试样本构造
         if time_steps is None:
@@ -260,17 +282,25 @@ class AE:
 
 
 if __name__ == '__main__':
-    img_name = r'imputated.png'
-    data_path = r'F:\pycharm-workspace\GAN_TRAFFIC_COMPUTATION\traffic_data\data_all.csv'
+    data_path = r'traffic_data/data_all.csv'
     ae = AE(data_path)
-    # ae.train()
-    ae.plot_test(img_name)
+    ae.train()
+    
+    
+    x_test = ae.test_data
+    masks = ae.patch_mask_randomly(x_test)
+    corrupted = x_test * masks
+    idx = np.random.randint(0, x_test.shape[0], 16)
+    x_test = x_test[idx]
+    masks = masks[idx]
+    
+    gen_imgs1 = ae.model.predict([x_test, masks])
+    gen_imgs2 = ae.model.predict([gen_imgs1, masks])
+    gen_imgs3 = ae.model.predict([gen_imgs2, masks])
+
+    ae.plot_test('first_round.png', x_test, corrupted, gen_imgs1, masks)
+    ae.plot_test('second_round.png', x_test, corrupted, gen_imgs1, masks)
+    ae.plot_test('third_round.png', x_test, corrupted, gen_imgs1, masks)
+    
     logger.info(' training finish')
 
-# figure = np.ones(shape=(25, 25))
-# figure_columns = 8
-# figure_rows = 6
-# interval = 1
-# total_fig_size = ((figure_columns - 1) * interval + figure.shape[0] * figure_columns,
-#                   (figure_rows - 1) * interval + figure.shape[1] * figure_rows)
-# total_fig = np.zeros(shape=total_fig_size)
