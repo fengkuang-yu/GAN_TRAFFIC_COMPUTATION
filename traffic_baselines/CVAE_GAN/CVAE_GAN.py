@@ -91,7 +91,7 @@ class CVAE_GAN:
         val_loss = Lambda(self.critic_loss, output_shape=(1,),
                           name='d_loss')([rec_valid, real_valid, gen_valid, inter_img, inter_valid])
         # 重构误差包括样本重构误差,判别器误差和分类器误差
-        gen_loss = Lambda(self.generative_loss, output_shape=self.img_shape,
+        gen_loss = Lambda(self.generative_loss, output_shape=(1,),
                           name='generative_loss')([x_real, x_rec, real_d_llike, rec_d_llike, real_c_llike, rec_c_llike])
         # 真实样本和生成样本判别器误差
         d_llike_loss = Lambda(self.mean_gaussian_negative_log_likelihood, output_shape=(1,),

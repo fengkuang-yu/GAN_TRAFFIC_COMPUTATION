@@ -61,6 +61,25 @@ class autoencoder():
         
             if epoch % 200 == 0:
                 print('loss:{}'.format(loss))
+                
+    def plot_test(self, file_name, x_test, x_corr, x_gen, x_mask):
+        mape, mae = self.get_mae_and_mape(x_test, x_gen, x_mask)
+        plot_data_instance = (x for x in zip(x_test, x_corr, x_gen))
+        rows, columns = 2, 8
+        fig, axs = plt.subplots(rows * 3, columns, figsize=(8, 6))
+        for row in range(rows):
+            for col in range(columns):
+                temp = next(plot_data_instance)
+                axs[row * 3, col].imshow(temp[0][:, :, -1], cmap='gray')
+                axs[row * 3, col].axis('off')
+                axs[row * 3 + 1, col].imshow(temp[1][:, :, -1], cmap='gray')
+                axs[row * 3 + 1, col].axis('off')
+                axs[row * 3 + 2, col].imshow(temp[2][:, :, -1], cmap='gray')
+                axs[row * 3 + 2, col].axis('off')
+        plt.subplots_adjust(wspace=0.1, hspace=0.1)
+        fig.suptitle('mape:{};mae:{}'.format(mape, mae))
+        fig.savefig(os.path.join(os.getcwd(), 'generated_imgs', file_name))
+        plt.close()
 
 
 if __name__=='__main__':

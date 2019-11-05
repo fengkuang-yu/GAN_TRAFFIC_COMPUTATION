@@ -72,7 +72,7 @@ class LossHistory(keras.callbacks.Callback):
         plt.savefig('generated_images\\loss\\' + time + '.pdf')
 
 
-class AE:
+class RNN_AE:
     def __init__(self, data_path):
         self.batch_size = 100
         self.cols = 60
@@ -103,7 +103,7 @@ class AE:
         latent = self.encoder(masked_x)
         fake_x = self.decoder(latent)
         imputed_img = Lambda(lambda x: x[0] * x[1] + (1 - x[0]) * x[2], output_shape=self.img_shape,
-                             name='imputation_layer')([masks, real_x, fake_x])
+                             name='imputation_layer')([masks, fake_x, real_x])
         
         ae = Model([real_x, masks], imputed_img)
         xent_loss = K.mean(K.binary_crossentropy(real_x, fake_x))
@@ -233,7 +233,7 @@ class AE:
                 axs[row * 3 + 1, col].axis('off')
                 axs[row * 3 + 2, col].imshow(temp[2][:, :, -1], cmap='gray')
                 axs[row * 3 + 2, col].axis('off')
-        plt.subplots_adjust(wspace=10, hspace=10)
+        plt.subplots_adjust(wspace=0.1, hspace=0.1)
         fig.suptitle('mape:{};mae:{}'.format(mape, mae))
         fig.savefig(os.path.join(os.getcwd(), 'generated_imgs', file_name))
         plt.close()
@@ -283,7 +283,7 @@ class AE:
 
 if __name__ == '__main__':
     data_path = r'traffic_data/data_all.csv'
-    ae = AE(data_path)
+    ae = RNN_AE(data_path)
     ae.train()
     
     
@@ -295,12 +295,12 @@ if __name__ == '__main__':
     masks = masks[idx]
     
     gen_imgs1 = ae.model.predict([x_test, masks])
-    gen_imgs2 = ae.model.predict([gen_imgs1, masks])
-    gen_imgs3 = ae.model.predict([gen_imgs2, masks])
+    gen_imgs2 = ae.model.predict([gen_imgs1, np.ones_like(masks)])
+    gen_imgs3 = ae.model.predict([gen_imgs2, np.ones_like(masks)])
 
     ae.plot_test('first_round.png', x_test, corrupted, gen_imgs1, masks)
-    ae.plot_test('second_round.png', x_test, corrupted, gen_imgs1, masks)
-    ae.plot_test('third_round.png', x_test, corrupted, gen_imgs1, masks)
+    ae.plot_test('second_round.png', x_test, corrupted, gen_imgs2, masks)
+    ae.plot_test('third_round.png', x_test, corrupted, gen_imgs3, masks)
     
     logger.info(' training finish')
 
