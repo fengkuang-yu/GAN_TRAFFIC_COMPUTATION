@@ -44,6 +44,7 @@ class attention_mnist_AE():
         self.ff_hidden_unit_num = 1024
         self.epochs = 10000
         self.optimizer = Adam(beta_1=0.9, beta_2=0.98, epsilon=10e-9)
+        self.loss_list = []
         
         # 构建模型
         self.attention_model = self.build_attention_model_with_single_input()
@@ -87,7 +88,7 @@ class attention_mnist_AE():
         fake_res = Activation('sigmoid')(feed_forward_3)
         
         imputed_img = Lambda(lambda x: x[0] * x[1] + (1 - x[0]) * x[2], output_shape=self.img_shape,
-                             name='imputation_layer')([masked_x, input_x, fake_res])
+                             name='imputation_layer')([masks, input_x, fake_res])
         
         attention_model = Model([input_x, masks], [fake_res, imputed_img], name='basic_generator')
         att_loss = K.mean(mean_squared_error(input_x, fake_res))
@@ -288,14 +289,26 @@ class attention_mnist_AE():
             masks = self.mask_randomly(real_images.shape, mode=self.miss_mode)
             loss = self.attention_model.train_on_batch([real_images, masks], None)
             
-            # if epoch % 2000 == 0:
-            #     self.plot_test_mask(
-            #         self.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(self.missing_percentage, epoch)
-            #     )
-            #     print('loss:{}'.format(loss))
+            if epoch % 10 == 0:
+                # self.plot_test_mask(
+                #     self.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(self.missing_percentage, epoch)
+                # )
+                # print('loss:{}'.format(loss))
+                self.loss_list.append((epoch, loss))
+
+    def plot_loss(self):
+        loss = self.loss_list
+        loss = pd.DataFrame(data=[x[1] for x in loss],
+                            index=[x[0] for x in loss],
+                            columns=['reconstruct_loss'], )
+    
+        loss.plot()
+        plt.savefig(os.path.join(os.getcwd(), 'training_related_img', 'autoencoder_loss.png'), dpi=300)
+        plt.close()
 
 
 if __name__ == '__main__':
     ae = attention_mnist_AE()
-    ae.train(40000)
+    ae.train(1000)
     ae.plot_test_mask(ae.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(ae.missing_percentage, 40000), full=True)
+    ae.plot_loss()
