@@ -50,14 +50,14 @@ class attention_mnist_AE():
         self.attention_model = self.build_attention_model_with_single_input()
         
         # 数据处理相关
-        self.missing_percentage = 0.2
+        self.missing_percentage = 0.3
         self.test_percent = 0.1
         self.scalar = MinMaxScaler()
         self.data = self.load_data(r'traffic_data/data_all.csv')
         self.index = np.array([[x] for x in range(len(self.data))])
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
             self.data, self.index, test_size=self.test_percent, random_state=12)
-        self.miss_mode = 'spatial_line'
+        self.miss_mode = 'patch'
     
     def build_attention_model_with_single_input(self):
         
@@ -298,9 +298,7 @@ class attention_mnist_AE():
 
     def plot_loss(self):
         loss = self.loss_list
-        loss = pd.DataFrame(data=[x[1] for x in loss],
-                            index=[x[0] for x in loss],
-                            columns=['reconstruct_loss'], )
+        loss = pd.DataFrame(data=[x[1] for x in loss], index=[x[0] for x in loss], columns=['reconstruct_loss'])
     
         loss.plot()
         plt.savefig(os.path.join(os.getcwd(), 'training_related_img', 'autoencoder_loss.png'), dpi=300)
@@ -308,7 +306,8 @@ class attention_mnist_AE():
 
 
 if __name__ == '__main__':
+    iterations = 20000
     ae = attention_mnist_AE()
-    ae.train(1000)
-    ae.plot_test_mask(ae.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(ae.missing_percentage, 40000), full=True)
+    ae.train(iterations)
+    ae.plot_test_mask(ae.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(ae.missing_percentage, iterations), full=True)
     ae.plot_loss()
