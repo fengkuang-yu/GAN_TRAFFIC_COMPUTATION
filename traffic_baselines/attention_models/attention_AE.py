@@ -65,6 +65,7 @@ class attention_mnist_AE():
         masks = Input(shape=self.img_shape, name='mask_inputs')
         masked_x = Lambda(lambda x: x[0] * x[1], output_shape=self.img_shape, name='masked_input')([input_x, masks])
         
+        # 以不同的空间点作为交通流量输入
         pos_encoding_1 = PositionEmbedding()(masked_x)
         add_position_1 = Add()([masked_x, pos_encoding_1])
         
@@ -74,8 +75,26 @@ class attention_mnist_AE():
         feed_forward_1 = FeedForward(units=self.ff_hidden_unit_num)(layer_normal_1)
         feed_forward_res_1 = Add()([feed_forward_1, layer_normal_1])
         
-        attention_multi_2 = MultiHeadAttention(head_num=self.multi_head_num)(feed_forward_res_1)
-        add_attention_2 = Add()([feed_forward_res_1, attention_multi_2])
+        # 以不同的时间点的交通流量作为输入
+        input_masked_trans = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
+                                    output_shape=self.img_shape[::-1],
+                                    name='transpose_layer_1')(masked_x)  # 将输入旋转了一下
+        pos_encoding_trans = PositionEmbedding()(input_masked_trans)
+        add_position_trans = Add()([input_masked_trans, pos_encoding_trans])
+        attention_multi_trans = MultiHeadAttention(head_num=self.multi_head_num)(add_position_trans)
+        add_attention_trans = Add()([add_position_trans, attention_multi_trans])
+        layer_normal_trans = LayerNormalization()(add_attention_trans)
+        feed_forward_trans = FeedForward(units=self.ff_hidden_unit_num)(layer_normal_trans)
+        feed_forward_res_trans = Add()([feed_forward_trans, layer_normal_trans])
+        feed_forward_res_trans_1 = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
+                                          output_shape=self.img_shape[::-1],
+                                          name='transpose_layer_2')(feed_forward_res_trans)  # 将输入转置过来
+
+        # 将两个特征图加起来作为后续的网络输入
+        feed_forward_res_hybrid = Add()([feed_forward_res_1, feed_forward_res_trans_1])
+        
+        attention_multi_2 = MultiHeadAttention(head_num=self.multi_head_num)(feed_forward_res_hybrid)
+        add_attention_2 = Add()([feed_forward_res_hybrid, attention_multi_2])
         layer_normal_2 = LayerNormalization()(add_attention_2)
         feed_forward_2 = FeedForward(units=self.ff_hidden_unit_num)(layer_normal_2)
         feed_forward_res_2 = Add()([feed_forward_2, layer_normal_2])
