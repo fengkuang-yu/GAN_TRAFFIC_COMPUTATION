@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+#-*- coding:utf-8 -*-
+# author:lenovo
+# datetime:2019/11/22 11:22
+# software: PyCharm
+# !/usr/bin/env python
 # -*- coding:utf-8 -*-
 # author:lenovo
 # datetime:2019/10/16 15:30
@@ -11,9 +16,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from keras import backend as K
-from keras.layers import Add, Input, Lambda, Activation
-from keras.losses import mean_squared_error
-from keras.models import Model
+
+from sklearn
 from keras.optimizers import Adam
 from keras.utils import plot_model
 from keras_multi_head.multi_head_attention import MultiHeadAttention
@@ -33,7 +37,7 @@ session = tf.Session(config=config)
 K.set_session(session)
 
 
-class attention_mnist_AE():
+class KNN_imputation():
     def __init__(self):
         # 设置训练超参数
         self.batch_size = 100
@@ -60,107 +64,7 @@ class attention_mnist_AE():
         self.miss_mode = 'patch'
     
     def build_attention_model_with_single_input(self):
-        
-        input_x = Input(shape=self.img_shape, name='real_inputs')
-        masks = Input(shape=self.img_shape, name='mask_inputs')
-        masked_x = Lambda(lambda x: x[0] * x[1], output_shape=self.img_shape, name='masked_input')([input_x, masks])
-        
-        # 以不同的空间点作为交通流量输入
-        pos_encoding_1 = PositionEmbedding()(masked_x)
-        add_position_1 = Add()([masked_x, pos_encoding_1])
-        
-        attention_multi_1 = MultiHeadAttention(head_num=self.multi_head_num)(add_position_1)
-        add_attention_1 = Add()([add_position_1, attention_multi_1])
-        layer_normal_1 = LayerNormalization()(add_attention_1)
-        feed_forward_1 = FeedForward(units=self.ff_hidden_unit_num)(layer_normal_1)
-        feed_forward_res_1 = Add()([feed_forward_1, layer_normal_1])
-        
-        # 以不同的时间点的交通流量作为输入
-        input_masked_trans = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
-                                    output_shape=self.img_shape[::-1],
-                                    name='transpose_layer_1')(masked_x)  # 将输入旋转了一下
-        pos_encoding_trans = PositionEmbedding()(input_masked_trans)
-        add_position_trans = Add()([input_masked_trans, pos_encoding_trans])
-        attention_multi_trans = MultiHeadAttention(head_num=self.multi_head_num)(add_position_trans)
-        add_attention_trans = Add()([add_position_trans, attention_multi_trans])
-        layer_normal_trans = LayerNormalization()(add_attention_trans)
-        feed_forward_trans = FeedForward(units=self.ff_hidden_unit_num)(layer_normal_trans)
-        feed_forward_res_trans = Add()([feed_forward_trans, layer_normal_trans])
-        feed_forward_res_trans_1 = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
-                                          output_shape=self.img_shape[::-1],
-                                          name='transpose_layer_2')(feed_forward_res_trans)  # 将输入转置过来
-
-        # 将两个特征图加起来作为后续的网络输入
-        feed_forward_res_hybrid = Add()([feed_forward_res_1, feed_forward_res_trans_1])
-        
-        attention_multi_2 = MultiHeadAttention(head_num=self.multi_head_num)(feed_forward_res_hybrid)
-        add_attention_2 = Add()([feed_forward_res_hybrid, attention_multi_2])
-        layer_normal_2 = LayerNormalization()(add_attention_2)
-        feed_forward_2 = FeedForward(units=self.ff_hidden_unit_num)(layer_normal_2)
-        feed_forward_res_2 = Add()([feed_forward_2, layer_normal_2])
-        
-        attention_multi_3 = MultiHeadAttention(head_num=self.multi_head_num)(feed_forward_res_2)
-        add_attention_3 = Add()([feed_forward_res_2, attention_multi_3])
-        layer_normal_3 = LayerNormalization()(add_attention_3)
-        feed_forward_3 = FeedForward(units=self.ff_hidden_unit_num)(layer_normal_3)
-        feed_forward_3 = Add()([feed_forward_3, layer_normal_3])
-        fake_res = Activation('sigmoid')(feed_forward_3)
-        
-        imputed_img = Lambda(lambda x: x[0] * x[1] + (1 - x[0]) * x[2], output_shape=self.img_shape,
-                             name='imputation_layer')([masks, input_x, fake_res])
-        
-        attention_model = Model([input_x, masks], [fake_res, imputed_img], name='basic_generator')
-        att_loss = K.mean(mean_squared_error(input_x, fake_res))
-        attention_model.add_loss(att_loss)
-        attention_model.compile(optimizer=self.optimizer, )
-        attention_model.summary()
-        plot_model(attention_model, to_file=os.path.join(os.getcwd(), 'network_related_img', 'attention_model.pdf'))
-        
-        return attention_model
     
-    def build_attention_model_with_two_input(self):
-        input_x = Input(shape=self.img_shape, name='real_data')
-        masks = Input(shape=self.img_shape, name='mask_layer')
-        masked_x = Lambda(function=lambda x: x[0] * x[1] + (1 - x[1]) * -1.,
-                          output_shape=self.img_shape,
-                          name='masked_input')([input_x, masks])
-        
-        # self_attention layer
-        
-        pos_encoding_1 = PositionEmbedding(name='pos_encoding_1')(masked_x)
-        add_position_1 = Add(name='add_position_1')([input_x, pos_encoding_1])
-        attention_multi_1 = MultiHeadAttention(head_num=self.multi_head_num, name='attention_multi_1')(add_position_1)
-        add_attention_1 = Add(name='add_attention_1')([add_position_1, attention_multi_1])
-        layer_normal_1 = LayerNormalization(name='layer_normal_1')(add_attention_1)
-        feed_forward_1 = FeedForward(units=1024, name='ff1')(layer_normal_1)
-        feed_forward_res_1 = Add(name='feed_forward_res_1')([feed_forward_1, layer_normal_1])
-        
-        pos_encoding_2 = PositionEmbedding()(feed_forward_res_1)
-        add_position_2 = Add()([input_x, pos_encoding_2])
-        attention_multi_2 = MultiHeadAttention(head_num=self.multi_head_num)(add_position_2)
-        add_attention_2 = Add()([add_position_2, attention_multi_2])
-        layer_normal_2 = LayerNormalization()(add_attention_2)
-        feed_forward_2 = FeedForward(units=1024)(layer_normal_2)
-        feed_forward_res_2 = Add()([feed_forward_2, layer_normal_2])
-        
-        pos_encoding_3 = PositionEmbedding()(feed_forward_res_2)
-        add_position_3 = Add()([input_x, pos_encoding_3])
-        attention_multi_3 = MultiHeadAttention(head_num=self.multi_head_num)(add_position_3)
-        add_attention_3 = Add()([add_position_1, attention_multi_3])
-        layer_normal_3 = LayerNormalization()(add_attention_3)
-        feed_forward_3 = FeedForward(units=1024)(layer_normal_3)
-        fake_x = Add()([feed_forward_3, layer_normal_3])
-        
-        imputed_img = Lambda(lambda x: x[0] * x[1] + (1 - x[0]) * x[2], output_shape=self.img_shape,
-                             name='imputation_layer')([masks, input_x, fake_x])
-        
-        attention_model = Model([input_x, masks], [fake_x, imputed_img])
-        
-        att_loss = K.mean(mean_squared_error(input_x, fake_x))
-        attention_model.add_loss(att_loss)
-        attention_model.compile(optimizer=self.optimizer, )
-        attention_model.summary()
-        return attention_model
     
     def plot_test(self, file_name=None):
         
@@ -316,11 +220,11 @@ class attention_mnist_AE():
                 # )
                 # print('loss:{}'.format(loss))
                 self.loss_list.append((epoch, loss))
-
+    
     def plot_loss(self):
         loss = self.loss_list
         loss = pd.DataFrame(data=[x[1] for x in loss], index=[x[0] for x in loss], columns=['reconstruct_loss'])
-    
+        
         loss.plot()
         plt.savefig(os.path.join(os.getcwd(), 'training_related_img', 'autoencoder_loss.png'), dpi=300)
         plt.close()
@@ -328,7 +232,7 @@ class attention_mnist_AE():
 
 if __name__ == '__main__':
     iterations = 20000
-    ae = attention_mnist_AE()
+    ae = KNN_imputation()
     ae.train(iterations)
     ae.plot_test_mask(ae.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(ae.missing_percentage, iterations),
                       full=True)
