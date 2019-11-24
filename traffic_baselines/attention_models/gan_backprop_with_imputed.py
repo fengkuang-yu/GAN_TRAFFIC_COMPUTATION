@@ -12,6 +12,9 @@
 2. 对缺失部分使用负数标记如-1
 3. 将输入理解为两个时间序列，第一个是检测器之间的注意力，第二个是时间上的注意力
 4. 减少判别器的判别能力
+5. 添加时间和空间的两种交通表示
+6. 添加重构误差为l1损失
+7.
 
 """
 
@@ -36,8 +39,8 @@ from utils import FeedForward
 from utils import LayerNormalization
 from utils import PositionEmbedding
 
-# from utils import spectral_normalization
-spectral_normalization = None
+from utils import spectral_normalization
+# spectral_normalization = None
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 使用编号为1，2号的GPU
@@ -58,8 +61,8 @@ class attention_GAN():
         self.multi_head_num = 6
         self.ff_hidden_unit_num = 1024
         self.epochs = 20000
-        self.generator_optimizer = Adam(lr=1e-4, beta_1=0., beta_2=0.9)
-        self.critic_optimizer = Adam(lr=4e-4, beta_1=0., beta_2=0.9)
+        self.generator_optimizer = Adam(lr=1e-3, beta_1=0., beta_2=0.9)
+        self.critic_optimizer = Adam(lr=4e-3, beta_1=0., beta_2=0.9)
         self.critic_loss_list, self.generator_loss_list, self.generator_valid = [], [], []
         
         # 优化的超参数
@@ -67,14 +70,14 @@ class attention_GAN():
         self.power_iter_num = 1
         
         # 数据处理相关
-        self.missing_percentage = 0.2  # 缺失面积百分比
-        self.test_percent = 0.1  # 测试集所占比例
+        self.missing_percentage = 0.3  # 缺失面积百分比
+        self.test_percent = 0.15  # 测试集所占比例
         self.scalar = MinMaxScaler()  # 归一化的类
         self.data = self.load_data(r'traffic_data/data_all.csv')
         self.index = np.array([[x] for x in range(len(self.data))])  # 假象的标签用来表示当前取出的样本在原始文件位置
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
             self.data, self.index, test_size=self.test_percent, random_state=12)  # 切分训练集和测试集
-        self.miss_mode = 'spatial_line'  # 缺失类型共计四种：[spatial_line, temporal_line, patch, random]
+        self.miss_mode = 'patch'  # 缺失类型共计四种：[spatial_line, temporal_line, patch, random]
         
         # 构建模型
         self.generator = self.build_generator()  # basic生成器
@@ -82,6 +85,22 @@ class attention_GAN():
         
         self.generator_trainer = self.build_generator_trainer()
         self.critic_trainer = self.build_critic_trainer()
+        
+    def attention_block(self, input_x):
+        """
+        multi-head attention block
+        :param input_x:
+        :return:
+        """
+        attention_multi_head = MultiHeadAttention(head_num=self.multi_head_num,
+                                               kernel_constraint=spectral_normalization)(input_x)
+        add_attention = Add()([input_x, attention_multi_head])
+        layer_normal = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention)
+        feed_forward = FeedForward(units=self.ff_hidden_unit_num,
+                                   kernel_constraint=spectral_normalization)(layer_normal)
+        feed_forward_res_1 = Add()([feed_forward, layer_normal])
+        return feed_forward_res_1
+
     
     def build_generator(self):
         
@@ -92,38 +111,35 @@ class attention_GAN():
         # input_masked_x = Lambda(lambda x: x[0] * x[1], output_shape=self.img_shape, name='masked_input')(
         #     [input_x, masks_x])
         # 缺失部分按负数处理
-        input_masked_x_2 = Lambda(lambda x: x[0] * x[1] + (1 - x[1]) * -1., output_shape=self.img_shape, name='masked_input')(
-            [input_x, masks_x])
+        input_masked_x_minus = Lambda(function=lambda x: x[0] * x[1] + -1. * (1 - x[1]),
+                                      output_shape=self.img_shape,
+                                      name='masked_input')([input_x, masks_x])
         
-        # self_attention layer
-        pos_encoding_1 = PositionEmbedding()(input_masked_x_2)
-        add_position_1 = Add()([input_masked_x_2, pos_encoding_1])
-        attention_multi_1 = MultiHeadAttention(head_num=self.multi_head_num,
-                                               kernel_constraint=spectral_normalization)(add_position_1)
-        add_attention_1 = Add()([add_position_1, attention_multi_1])
-        layer_normal_1 = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention_1)
-        feed_forward_1 = FeedForward(units=self.ff_hidden_unit_num,
-                                     kernel_constraint=spectral_normalization)(layer_normal_1)
-        feed_forward_res_1 = Add()([feed_forward_1, layer_normal_1])
+        # 以不同的空间点的交通流量信息作为输入
+        pos_encoding_1 = PositionEmbedding()(input_masked_x_minus)
+        add_position_1 = Add()([input_masked_x_minus, pos_encoding_1])
+        feed_forward_res_1 = self.attention_block(add_position_1)
         
-        attention_multi_2 = MultiHeadAttention(head_num=self.multi_head_num,
-                                               kernel_constraint=spectral_normalization)(feed_forward_res_1)
-        add_attention_2 = Add()([feed_forward_res_1, attention_multi_2])
-        layer_normal_2 = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention_2)
-        feed_forward_2 = FeedForward(units=self.ff_hidden_unit_num,
-                                     kernel_constraint=spectral_normalization)(layer_normal_2)
-        feed_forward_res_2 = Add()([feed_forward_2, layer_normal_2])
+        # 以不同的时间点的交通流量作为输入
+        input_masked_trans = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
+                                    output_shape=self.img_shape[::-1],
+                                    name='transpose_layer_1')(input_masked_x_minus)  # 将输入旋转了一下
+        pos_encoding_trans = PositionEmbedding()(input_masked_trans)
+        add_position_trans = Add()([input_masked_trans, pos_encoding_trans])
+        feed_forward_res_trans = self.attention_block(add_position_trans)
+        feed_forward_res_trans_1 = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
+                                          output_shape=self.img_shape[::-1],
+                                          name='transpose_layer_2')(feed_forward_res_trans)  # 将输入转置过来
+
+        # 将两个特征图加起来作为后续的网络输入
+        feed_forward_res_hybrid = Add()([feed_forward_res_1, feed_forward_res_trans_1])
+        feed_forward_res_3 = self.attention_block(feed_forward_res_hybrid)
         
-        attention_multi_3 = MultiHeadAttention(head_num=self.multi_head_num,
-                                               kernel_constraint=spectral_normalization)(feed_forward_res_2)
-        add_attention_3 = Add()([feed_forward_res_2, attention_multi_3])
-        layer_normal_3 = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention_3)
-        feed_forward_3 = FeedForward(units=self.ff_hidden_unit_num,
-                                     kernel_constraint=spectral_normalization)(layer_normal_3)
-        feed_forward_3 = Add()([feed_forward_3, layer_normal_3])
-        fake_res = Activation('sigmoid')(feed_forward_3)
         
-        imputed_img = Lambda(lambda x: x[0] * x[1] + (1 - x[0]) * x[2], output_shape=self.img_shape,
+        fake_res = Activation('sigmoid')(feed_forward_res_3)
+        
+        imputed_img = Lambda(function=lambda x: x[0] * x[1] + (1 - x[0]) * x[2],
+                             output_shape=self.img_shape,
                              name='imputation_layer')([masks_x, input_x, fake_res])
         
         attention_model = Model([input_x, masks_x], [fake_res, imputed_img], name='basic_generator')
@@ -136,37 +152,15 @@ class attention_GAN():
         # self_attention layer
         pos_encoding_1 = PositionEmbedding()(input_x)
         add_position_1 = Add()([input_x, pos_encoding_1])
-        attention_multi_1 = MultiHeadAttention(head_num=self.multi_head_num,
-                                               kernel_constraint=spectral_normalization)(add_position_1)
-        add_attention_1 = Add()([add_position_1, attention_multi_1])
-        layer_normal_1 = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention_1)
-        feed_forward_1 = FeedForward(units=self.ff_hidden_unit_num,
-                                     kernel_constraint=spectral_normalization)(layer_normal_1)
-        feed_forward_res_1 = Add()([feed_forward_1, layer_normal_1])
         
-        attention_multi_2 = MultiHeadAttention(head_num=self.multi_head_num,
-                                               kernel_constraint=spectral_normalization)(feed_forward_res_1)
-        add_attention_2 = Add()([feed_forward_res_1, attention_multi_2])
-        layer_normal_2 = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention_2)
-        feed_forward_2 = FeedForward(units=self.ff_hidden_unit_num,
-                                     kernel_constraint=spectral_normalization)(layer_normal_2)
-        feed_forward_res_2 = Add()([feed_forward_2, layer_normal_2])
+        feed_forward_res_1 = self.attention_block(add_position_1)
         
-        # attention_multi_3 = MultiHeadAttention(head_num=self.multi_head_num,
-        #                                        kernel_constraint=spectral_normalization)(feed_forward_res_2)
-        # add_attention_3 = Add()([feed_forward_res_2, attention_multi_3])
-        # layer_normal_3 = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention_3)
-        # feed_forward_3 = FeedForward(units=self.ff_hidden_unit_num,
-        #                              kernel_constraint=spectral_normalization)(layer_normal_3)
-        # feed_forward_res_3 = Add()([feed_forward_3, layer_normal_3])
-        feed_forward_res_3 = feed_forward_res_2
-        
-        flatten_1 = Flatten()(feed_forward_res_3)
+        flatten_1 = Flatten()(feed_forward_res_1)
         dense_1 = Dense(self.latent_dim, kernel_constraint=spectral_normalization)(flatten_1)
         relu_1 = LeakyReLU()(dense_1)
         output = Dense(1, kernel_constraint=spectral_normalization, activation='tanh')(relu_1)  # 添加了激活函数
         
-        basic_critic = Model(input_x, [output, feed_forward_res_3], name='basic_discriminator')
+        basic_critic = Model(input_x, [output, feed_forward_res_1], name='basic_discriminator')
         plot_model(basic_critic, to_file=os.path.join(os.getcwd(), 'network_related_img', 'basic_critic.pdf'))
         return basic_critic
     
@@ -216,16 +210,24 @@ class attention_GAN():
         return generator_trainer
     
     def critic_loss(self, args):
+        """
+        使用spectral norm 文章内的hinge损失
+        :param args:
+        :return:
+        """
         rec_valid, real_valid = args
         
-        rec_valid_loss = K.mean(rec_valid)
-        real_valid_loss = K.mean(-1 * real_valid)
+        # rec_loss = K.mean(K.minimum(0., -1. + real_valid))
+        # real_loss = K.mean(K.minimum(0., -1. - rec_valid))
         
-        return rec_valid_loss + real_valid_loss
+        rec_loss = K.mean(rec_valid)
+        real_loss = K.mean(-1 * real_valid)
+        
+        return rec_loss + real_loss
     
     def generative_loss(self, args):
         x_real, x_rec, real_d_llike, rec_d_llike = args
-        reconstruct_loss = K.mean(K.square(x_real - x_rec))
+        reconstruct_loss = K.mean(K.abs(x_real - x_rec))
         critic_hidden_loss = K.mean(K.square(real_d_llike - rec_d_llike))
         return self.reconstruct_weight * reconstruct_loss + critic_hidden_loss
     
@@ -310,7 +312,7 @@ class attention_GAN():
                 axs[4 + index, j].axis('off')
         fig.suptitle('total_rmse:{:.3f};total_mae:{:.3f}\n'
                      'masks_rmse:{:.3f};masks_mae:{:.3f}'.format(total_rmse, total_mae, masks_rmse, masks_mae))
-        fig.savefig(os.path.join(os.getcwd(), 'generated_images', 'gan', file_name), dpi=300)
+        fig.savefig(os.path.join(os.getcwd(), 'generated_images', 'gan_backprop_with_imputed', file_name), dpi=300)
         plt.close()
     
     def load_data(self, dir):
@@ -387,9 +389,9 @@ class attention_GAN():
 
 
 if __name__ == '__main__':
+    iterations = int(1e5)
     ae_gan = attention_GAN()
-    
-    # ae_gan.train(100000)
-    # ae_gan.plot_test_mask(ae_gan.miss_mode + 'GAN_new_{:.1%}_{:0>5d}epochs_gen.png'.format(
-    #     ae_gan.missing_percentage, 100000), full=True)  # 给出填补的修复案例
-    # ae_gan.plot_loss()  # 画出损失函数图
+    ae_gan.train(iterations)
+    ae_gan.plot_test_mask(ae_gan.miss_mode + 'GAN_new_{:.1%}_{:0>5d}epochs_gen.png'.format(
+        ae_gan.missing_percentage, iterations), full=True)  # 给出填补的修复案例
+    ae_gan.plot_loss()  # 画出损失函数图
