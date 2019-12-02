@@ -14,7 +14,7 @@
 4. 减少判别器的判别能力
 5. 添加时间和空间的两种交通表示
 6. 添加重构误差为l1损失
-7.
+7. 添加u-net结构
 
 """
 
@@ -25,8 +25,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from keras import backend as K
-from keras.layers import Add, Flatten, Dense, Activation
-from keras.layers import Input, LeakyReLU, Lambda
+from keras.layers import Add, Flatten, Dense, Activation, Conv2D
+from keras.layers import Input, LeakyReLU, Lambda, Reshape, Concatenate
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.utils import plot_model
@@ -70,7 +70,7 @@ class attention_GAN():
         self.power_iter_num = 1
         
         # 数据处理相关
-        self.missing_percentage = 0.3  # 缺失面积百分比
+        self.missing_percentage = 0.7  # 缺失面积百分比
         self.test_percent = 0.15  # 测试集所占比例
         self.scalar = MinMaxScaler()  # 归一化的类
         self.data = self.load_data(r'traffic_data/data_all.csv')
@@ -85,22 +85,21 @@ class attention_GAN():
         
         self.generator_trainer = self.build_generator_trainer()
         self.critic_trainer = self.build_critic_trainer()
-        
-    def attention_block(self, input_x):
+    
+    def attention_block(self, input_x, kernel_constraint=None):
         """
         multi-head attention block
         :param input_x:
         :return:
         """
         attention_multi_head = MultiHeadAttention(head_num=self.multi_head_num,
-                                               kernel_constraint=spectral_normalization)(input_x)
+                                                  kernel_constraint=kernel_constraint)(input_x)
         add_attention = Add()([input_x, attention_multi_head])
-        layer_normal = LayerNormalization(gamma_constraint=spectral_normalization)(add_attention)
+        layer_normal = LayerNormalization(gamma_constraint=kernel_constraint)(add_attention)
         feed_forward = FeedForward(units=self.ff_hidden_unit_num,
-                                   kernel_constraint=spectral_normalization)(layer_normal)
+                                   kernel_constraint=kernel_constraint)(layer_normal)
         feed_forward_res_1 = Add()([feed_forward, layer_normal])
         return feed_forward_res_1
-
     
     def build_generator(self):
         
@@ -118,7 +117,7 @@ class attention_GAN():
         # 以不同的空间点的交通流量信息作为输入
         pos_encoding_1 = PositionEmbedding()(input_masked_x_minus)
         add_position_1 = Add()([input_masked_x_minus, pos_encoding_1])
-        feed_forward_res_1 = self.attention_block(add_position_1)
+        feed_forward_res_1 = self.attention_block(add_position_1, kernel_constraint=spectral_normalization)
         
         # 以不同的时间点的交通流量作为输入
         input_masked_trans = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
@@ -126,15 +125,14 @@ class attention_GAN():
                                     name='transpose_layer_1')(input_masked_x_minus)  # 将输入旋转了一下
         pos_encoding_trans = PositionEmbedding()(input_masked_trans)
         add_position_trans = Add()([input_masked_trans, pos_encoding_trans])
-        feed_forward_res_trans = self.attention_block(add_position_trans)
+        feed_forward_res_trans = self.attention_block(add_position_trans, kernel_constraint=spectral_normalization)
         feed_forward_res_trans_1 = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
-                                          output_shape=self.img_shape[::-1],
+                                          output_shape=self.img_shape,
                                           name='transpose_layer_2')(feed_forward_res_trans)  # 将输入转置过来
-
+        
         # 将两个特征图加起来作为后续的网络输入
         feed_forward_res_hybrid = Add()([feed_forward_res_1, feed_forward_res_trans_1])
-        feed_forward_res_3 = self.attention_block(feed_forward_res_hybrid)
-        
+        feed_forward_res_3 = self.attention_block(feed_forward_res_hybrid, kernel_constraint=spectral_normalization)
         
         fake_res = Activation('sigmoid')(feed_forward_res_3)
         
@@ -153,12 +151,13 @@ class attention_GAN():
         pos_encoding_1 = PositionEmbedding()(input_x)
         add_position_1 = Add()([input_x, pos_encoding_1])
         
-        feed_forward_res_1 = self.attention_block(add_position_1)
+        feed_forward_res_1 = self.attention_block(add_position_1, kernel_constraint=spectral_normalization)
         
         flatten_1 = Flatten()(feed_forward_res_1)
         dense_1 = Dense(self.latent_dim, kernel_constraint=spectral_normalization)(flatten_1)
         relu_1 = LeakyReLU()(dense_1)
-        output = Dense(1, kernel_constraint=spectral_normalization, activation='tanh')(relu_1)  # 添加了激活函数
+        # output = Dense(1, kernel_constraint=spectral_normalization, activation='tanh')(relu_1)  # 添加了激活函数
+        output = Dense(1, kernel_constraint=spectral_normalization)(relu_1)  # 添加了激活函数
         
         basic_critic = Model(input_x, [output, feed_forward_res_1], name='basic_discriminator')
         plot_model(basic_critic, to_file=os.path.join(os.getcwd(), 'network_related_img', 'basic_critic.pdf'))
@@ -217,11 +216,11 @@ class attention_GAN():
         """
         rec_valid, real_valid = args
         
-        # rec_loss = K.mean(K.minimum(0., -1. + real_valid))
-        # real_loss = K.mean(K.minimum(0., -1. - rec_valid))
-        
-        rec_loss = K.mean(rec_valid)
-        real_loss = K.mean(-1 * real_valid)
+        rec_loss = K.mean(K.minimum(0., -1. + real_valid))
+        real_loss = K.mean(K.minimum(0., -1. - rec_valid))
+        #
+        # rec_loss = K.mean(K.abs(-1. - rec_valid))
+        # real_loss = K.mean(K.abs(1. - real_valid))
         
         return rec_loss + real_loss
     
@@ -354,7 +353,7 @@ class attention_GAN():
                 # self.generator_valid.append((epoch, np.mean(gen_valid)))
             
             if epoch % 5000 == 0:
-                ae_gan.plot_test_mask(ae_gan.miss_mode + 'GAN_new_{:.1%}_{:0>5d}epochs_gen.png'.format(
+                ae_gan.plot_test_mask(ae_gan.miss_mode + 'u_net_GAN_new_{:.1%}_{:0>5d}epochs.png'.format(
                     ae_gan.missing_percentage, epoch), full=True)
             #     self.plot_test_mask(
             #         self.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(self.missing_percentage, epoch))

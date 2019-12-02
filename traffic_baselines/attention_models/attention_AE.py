@@ -27,7 +27,7 @@ from utils import LayerNormalization
 from utils import PositionEmbedding
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 使用编号为1，2号的GPU
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 使用编号为1，2号的GPU
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True  # 不全部占满显存, 按需分配
 session = tf.Session(config=config)
@@ -319,7 +319,7 @@ class dense_ae():
         self.miss_mode = miss_mode
         
         # 构建模型
-        self.attention_model = self.attention_model()
+        self.attention_model = self.dense_model()
     
     def dense_model(self):
         input_x = Input(shape=self.img_shape, name='real_data')
@@ -330,8 +330,8 @@ class dense_ae():
         
         # dense_net
         input_layer = Flatten()(masked_x)
-        dense_1 = Dense(self.ff_hidden_unit_num, activation='relu')(input_layer)
-        dense_2 = Dense(self.ff_hidden_unit_num, activation='relu')(dense_1)
+        dense_1 = Dense(128, activation='relu')(input_layer)
+        dense_2 = Dense(128, activation='relu')(dense_1)
         dense_3 = Dense(np.prod(self.img_shape), activation='sigmoid')(dense_2)
         
         fake_x = Reshape(self.img_shape)(dense_3)
@@ -478,20 +478,13 @@ class dense_ae():
         x_train = self.X_train
         total_epoch = self.epochs if epochs == None else epochs
         
-        for epoch in range(total_epoch):
+        for epoch in tqdm(range(total_epoch)):
             idx = np.random.randint(0, x_train.shape[0], self.batch_size)
             real_images = x_train[idx]
             real_images = real_images.reshape((-1, *self.img_shape))
             masks = self.mask_randomly(real_images.shape, mode=self.miss_mode)
             loss = self.attention_model.train_on_batch([real_images, masks], None)
             
-            if epoch % 10 == 0:
-                # self.plot_test_mask(
-                #     self.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(self.missing_percentage, epoch)
-                # )
-                # print('loss:{}'.format(loss))
-                self.loss_list.append((epoch, loss))
-    
     def plot_loss(self):
         loss = self.loss_list
         loss = pd.DataFrame(data=[x[1] for x in loss], index=[x[0] for x in loss], columns=['reconstruct_loss'])
@@ -503,15 +496,15 @@ class dense_ae():
 
 if __name__ == '__main__':
     def base_func(miss_percent, miss_mode, iterations):
-        ae = autoencoder_models(miss_mode=miss_mode, missing_percentage=miss_percent)
+        ae = dense_ae(miss_mode=miss_mode, missing_percentage=miss_percent)
         ae.train(iterations)
         ae.plot_test_mask(
-            ae.miss_mode + '{:.1%}_{:0>5d}epochs_attention_ae_index.png'.format(ae.missing_percentage, iterations),
+            ae.miss_mode + '{:.1%}_{:0>5d}epochs_dense_ae_index.png'.format(ae.missing_percentage, iterations),
             full=True)
         ae.plot_loss()
     
     
-    iterations = 20000
+    iterations = 40000
     
     for miss_mode in ['patch', 'spatial_line', 'temporal_line']:
         for miss_percent in [0.1 * x for x in range(1, 10)]:

@@ -1,0 +1,177 @@
+11/30/2019 11:09:17 AM 
+********************begin********************
+11/30/2019 11:09:21 AM i am here
+11/30/2019 11:09:21 AM i am here
+11/30/2019 11:09:21 AM i am here
+11/30/2019 11:09:21 AM i am here
+11/30/2019 11:09:22 AM i am here
+11/30/2019 11:09:22 AM i am here
+11/30/2019 11:09:22 AM i am here
+11/30/2019 11:09:22 AM i am here
+11/30/2019 02:34:13 PM 
+ miss_mode: patch 
+ miss_rate: 0.1 
+ masks_rmse: 31.01435224017215 
+ masks_mae: 19.640147368932688
+11/30/2019 02:34:21 PM i am here
+11/30/2019 02:35:55 PM 
+ miss_mode: patch 
+ miss_rate: 0.2 
+ masks_rmse: 29.180084156693496 
+ masks_mae: 19.354724422576226
+11/30/2019 02:36:01 PM i am here
+11/30/2019 02:38:55 PM 
+ miss_mode: patch 
+ miss_rate: 0.30000000000000004 
+ masks_rmse: 28.646995977349942 
+ masks_mae: 19.251525218774436
+11/30/2019 02:39:01 PM i am here
+11/30/2019 02:41:17 PM 
+ miss_mode: patch 
+ miss_rate: 0.4 
+ masks_rmse: 28.502350718532185 
+ masks_mae: 19.287648634132886
+11/30/2019 02:41:22 PM i am here
+11/30/2019 02:43:58 PM 
+ miss_mode: patch 
+ miss_rate: 0.5 
+ masks_rmse: 28.466923077390483 
+ masks_mae: 19.337878228437475
+11/30/2019 02:44:04 PM i am here
+11/30/2019 02:46:00 PM 
+ miss_mode: patch 
+ miss_rate: 0.6000000000000001 
+ masks_rmse: 28.137769627362662 
+ masks_mae: 19.257008421820483
+11/30/2019 02:46:06 PM i am here
+11/30/2019 02:48:37 PM 
+ miss_mode: patch 
+ miss_rate: 0.7000000000000001 
+ masks_rmse: 28.279046463720995 
+ masks_mae: 19.32011912618801
+11/30/2019 02:48:43 PM i am here
+11/30/2019 02:50:17 PM 
+ miss_mode: patch 
+ miss_rate: 0.8 
+ masks_rmse: 28.39705009120476 
+ masks_mae: 19.394051204706365
+11/30/2019 02:50:24 PM i am here
+11/30/2019 05:56:06 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.1 
+ masks_rmse: 29.172636232839356 
+ masks_mae: 18.734621027066424
+11/30/2019 05:56:19 PM i am here
+11/30/2019 06:00:54 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.2 
+ masks_rmse: 27.54391298325417 
+ masks_mae: 18.337380128933486
+11/30/2019 06:01:00 PM i am here
+11/30/2019 06:08:36 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.30000000000000004 
+ masks_rmse: 26.651801134222776 
+ masks_mae: 18.161896924173153
+11/30/2019 06:08:42 PM i am here
+11/30/2019 06:15:05 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.4 
+ masks_rmse: 26.422795115347597 
+ masks_mae: 18.107851422006213
+11/30/2019 06:15:11 PM i am here
+11/30/2019 06:20:50 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.5 
+ masks_rmse: 26.419225324893304 
+ masks_mae: 18.122969329104695
+11/30/2019 06:20:55 PM i am here
+11/30/2019 06:24:41 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.6000000000000001 
+ masks_rmse: 26.33958282194905 
+ masks_mae: 18.13998871968672
+11/30/2019 06:24:46 PM i am here
+11/30/2019 06:29:33 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.7000000000000001 
+ masks_rmse: 26.331676983804314 
+ masks_mae: 18.17277515939141
+11/30/2019 06:29:50 PM i am here
+11/30/2019 06:31:57 PM 
+ miss_mode: spatial_line 
+ miss_rate: 0.8 
+ masks_rmse: 26.492807810015968 
+ masks_mae: 18.242157404526324
+11/30/2019 06:32:03 PM i am here
+11/30/2019 08:06:00 PM 
+********************begin********************
+11/30/2019 08:06:05 PM i am here
+11/30/2019 08:06:05 PM i am here
+11/30/2019 08:06:05 PM i am here
+11/30/2019 08:06:06 PM i am here
+11/30/2019 08:06:06 PM i am here
+11/30/2019 08:06:07 PM i am here
+11/30/2019 08:06:07 PM i am here
+11/30/2019 08:06:08 PM i am here
+11/30/2019 11:00:00 PM 
+********************begin********************
+11/30/2019 11:00:03 PM i am here
+11/30/2019 11:00:03 PM i am here
+11/30/2019 11:00:03 PM i am here
+11/30/2019 11:00:03 PM i am here
+11/30/2019 11:00:03 PM i am here
+11/30/2019 11:00:04 PM i am here
+11/30/2019 11:00:04 PM i am here
+11/30/2019 11:00:05 PM i am here
+12/01/2019 10:33:15 AM 
+********************begin********************
+12/01/2019 10:33:19 AM i am here
+12/01/2019 10:33:19 AM i am here
+12/01/2019 10:33:19 AM i am here
+12/01/2019 10:33:19 AM i am here
+12/01/2019 10:33:19 AM i am here
+12/01/2019 10:33:20 AM i am here
+12/01/2019 10:33:20 AM i am here
+12/01/2019 10:33:20 AM i am here
+12/01/2019 03:30:25 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.1 
+ masks_rmse: 29.990515053384666 
+ masks_mae: 19.02040648784748
+12/01/2019 03:30:34 PM i am here
+12/01/2019 03:33:57 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.2 
+ masks_rmse: 28.084298892746602 
+ masks_mae: 18.510582521757318
+12/01/2019 03:36:49 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.30000000000000004 
+ masks_rmse: 26.937555250619976 
+ masks_mae: 18.257231095371115
+12/01/2019 03:38:49 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.4 
+ masks_rmse: 27.18779085215428 
+ masks_mae: 18.32935610527719
+12/01/2019 03:40:46 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.5 
+ masks_rmse: 26.874625264785028 
+ masks_mae: 18.293529684016747
+12/01/2019 03:42:00 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.6000000000000001 
+ masks_rmse: 26.98318280912662 
+ masks_mae: 18.361340569055255
+12/01/2019 03:43:55 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.7000000000000001 
+ masks_rmse: 26.80394916953457 
+ masks_mae: 18.401035839976306
+12/01/2019 03:44:34 PM 
+ miss_mode: temporal_line 
+ miss_rate: 0.8 
+ masks_rmse: 27.015964505782616 
+ masks_mae: 18.509296161272236

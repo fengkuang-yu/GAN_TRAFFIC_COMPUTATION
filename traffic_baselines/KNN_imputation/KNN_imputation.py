@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#-*- coding:utf-8 -*-
+# -*- coding:utf-8 -*-
 # author:lenovo
 # datetime:2019/11/22 11:22
 # software: PyCharm
@@ -11,94 +11,74 @@
 
 import os
 
+import logging
+
+logging.basicConfig(format='%(asctime)s %(message)s',
+                    datefmt='%m/%d/%Y %I:%M:%S %p',
+                    filename='knn_model_result.log',
+                    level=logging.ERROR)
+
+from multiprocessing import Pool
 import matplotlib.pylab as plt
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from keras import backend as K
+from fancyimpute import KNN
 
-from sklearn
-from keras.optimizers import Adam
-from keras.utils import plot_model
-from keras_multi_head.multi_head_attention import MultiHeadAttention
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from tqdm import tqdm
-
-from utils import FeedForward
-from utils import LayerNormalization
-from utils import PositionEmbedding
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 使用编号为1，2号的GPU
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True  # 不全部占满显存, 按需分配
-session = tf.Session(config=config)
-K.set_session(session)
 
 
 class KNN_imputation():
-    def __init__(self):
+    def __init__(self, missing_percentage=0.8, test_percent=0.15,
+                 data_path=r'traffic_data/data_all.csv', miss_mode='patch'):
         # 设置训练超参数
         self.batch_size = 100
         self.cols = 60
         self.rows = 60
         self.img_shape = (self.rows, self.cols)
-        self.multi_head_num = 6
-        self.ff_hidden_unit_num = 1024
-        self.epochs = 10000
-        self.optimizer = Adam(beta_1=0.9, beta_2=0.98, epsilon=10e-9)
-        self.loss_list = []
-        
-        # 构建模型
-        self.attention_model = self.build_attention_model_with_single_input()
         
         # 数据处理相关
-        self.missing_percentage = 0.3
-        self.test_percent = 0.1
+        self.missing_percentage = missing_percentage
+        self.test_percent = test_percent
         self.scalar = MinMaxScaler()
-        self.data = self.load_data(r'traffic_data/data_all.csv')
+        self.data = self.load_data(data_path)
         self.index = np.array([[x] for x in range(len(self.data))])
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
             self.data, self.index, test_size=self.test_percent, random_state=12)
-        self.miss_mode = 'patch'
-    
-    def build_attention_model_with_single_input(self):
-    
-    
-    def plot_test(self, file_name=None):
+        self.miss_mode = miss_mode
         
-        img_index = np.random.randint(0, self.X_test.shape[0], 100)
-        x_test = self.X_test[img_index].reshape(-1, *self.img_shape)
-        x_gen = self.attention_model.predict(x_test)
+        # 构建模型
+        self.attention_model = self.knn_imputation_model()
+    
+    def knn_imputation_model(self):
+        x_test = self.X_test.reshape(-1, *self.img_shape)
+        masks = self.mask_randomly(x_test.shape, mode=self.miss_mode)
+        masked = x_test * masks
+        masked_reshape = masked.reshape(-1, np.prod(masked.shape[1:]))
+        x_train = self.X_train.reshape(-1, np.prod(self.X_train.shape[1:]))
         
-        r, c = 4, 4
-        fig, axs = plt.subplots(r, c)
-        cnt = 0
-        for i in range(r):
-            for j in range(c):
-                axs[i, j].imshow(x_gen[cnt, :, :], cmap='gray')
-                axs[i, j].axis('off')
-                cnt += 1
-        plt.subplots_adjust(wspace=0.9, hspace=0.9)
-        fig.suptitle('Generated images')
-        # fig.savefig(os.path.join(os.getcwd(), 'generated_imgs', file_name))
-        plt.show()
-        plt.close()
+        x_train_df = pd.DataFrame(x_train)
+        x_test_df = pd.DataFrame(masked_reshape).replace(0., np.NaN)
         
-        r, c = 4, 4
-        fig, axs = plt.subplots(r, c)
-        cnt = 0
-        for i in range(r):
-            for j in range(c):
-                axs[i, j].imshow(x_test[cnt, :, :], cmap='gray')
-                axs[i, j].axis('off')
-                cnt += 1
-        plt.subplots_adjust(wspace=0.9, hspace=0.9)
-        fig.suptitle('Real images')
-        # fig.savefig(os.path.join(os.getcwd(), 'generated_imgs', file_name))
-        plt.show()
-        plt.close()
+        train_data_total = pd.concat((x_train_df, x_test_df), axis=0, ignore_index=True)
+        # 数据修复
+        data_complete = KNN(k=3, min_value=0., max_value=1.).fit_transform(train_data_total)
+        
+        x_test_imputed = data_complete[-len(masked_reshape):, :]
+        real_test = self.scalar.inverse_transform(x_test.reshape(-1, np.prod(x_test.shape[1:])))
+        fake_test = self.scalar.inverse_transform(x_test_imputed)
+        
+        # 填充部分的误差
+        masks_rmse = np.sqrt(np.sum(np.power(fake_test - real_test, 2)) / np.sum(1 - masks))
+        masks_mae = np.sum(np.abs(fake_test - real_test)) / np.sum(1 - masks)
+        logging.error('\n miss_mode: {} '
+                     '\n miss_rate: {} '
+                     '\n masks_rmse: {} '
+                     '\n masks_mae: {}'.format(self.miss_mode, self.missing_percentage, masks_rmse, masks_mae))
+        
+        return data_complete
     
     def mask_randomly(self, shape, mode='patch'):
         """
@@ -201,39 +181,20 @@ class KNN_imputation():
                      'masks_rmse:{:.3f};masks_mae:{:.3f}'.format(total_rmse, total_mae, masks_rmse, masks_mae))
         fig.savefig(os.path.join(os.getcwd(), 'generated_images', 'ae', file_name), dpi=300)
         plt.close()
-    
-    def train(self, epochs=20000):
-        # x_train = self.x_train
-        x_train = self.X_train
-        total_epoch = self.epochs if epochs == None else epochs
-        
-        for epoch in tqdm(range(total_epoch)):
-            idx = np.random.randint(0, x_train.shape[0], self.batch_size)
-            real_images = x_train[idx]
-            real_images = real_images.reshape((-1, *self.img_shape))
-            masks = self.mask_randomly(real_images.shape, mode=self.miss_mode)
-            loss = self.attention_model.train_on_batch([real_images, masks], None)
-            
-            if epoch % 10 == 0:
-                # self.plot_test_mask(
-                #     self.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(self.missing_percentage, epoch)
-                # )
-                # print('loss:{}'.format(loss))
-                self.loss_list.append((epoch, loss))
-    
-    def plot_loss(self):
-        loss = self.loss_list
-        loss = pd.DataFrame(data=[x[1] for x in loss], index=[x[0] for x in loss], columns=['reconstruct_loss'])
-        
-        loss.plot()
-        plt.savefig(os.path.join(os.getcwd(), 'training_related_img', 'autoencoder_loss.png'), dpi=300)
-        plt.close()
 
 
 if __name__ == '__main__':
-    iterations = 20000
-    ae = KNN_imputation()
-    ae.train(iterations)
-    ae.plot_test_mask(ae.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(ae.missing_percentage, iterations),
-                      full=True)
-    ae.plot_loss()
+    logging.error('\n' + '*'*20 + 'begin' + '*'*20)
+    def basic_task(miss_percent=0.1):
+        print('task running')
+        for miss_mode in ['patch', 'spatial_line', 'temporal_line']:
+            ae = KNN_imputation(missing_percentage=miss_percent, test_percent=0.15, miss_mode=miss_mode)
+    
+    # 多进程调用
+    p = Pool(8)
+    for i in range(9):
+        p.apply_async(basic_task, args=(0.1 * (i + 1),))
+    p.close()
+    p.join()
+    logging.error('\n' + '*'*20 + 'end' + '*'*20)
+
