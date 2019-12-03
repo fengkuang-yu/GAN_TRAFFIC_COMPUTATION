@@ -115,7 +115,7 @@ class autoencoder_models():
                              name='imputation_layer')([masks, input_x, fake_res])
         
         attention_model = Model([input_x, masks, time_stamp], [fake_res, imputed_img], name='basic_generator')
-        att_loss = K.mean(mean_squared_error(input_x, fake_res))
+        att_loss = K.mean(mean_squared_error(input_x, imputed_img))
         attention_model.add_loss(att_loss)
         attention_model.compile(optimizer=self.optimizer, )
         attention_model.summary()
@@ -269,7 +269,7 @@ class autoencoder_models():
         train_index = self.y_train
         total_epoch = self.epochs if epochs == None else epochs
         
-        for epoch in range(total_epoch):
+        for epoch in tqdm(range(total_epoch)):
             idx = np.random.randint(0, x_train.shape[0], self.batch_size)
             real_images = x_train[idx]
             real_index = train_index[idx]
@@ -342,35 +342,12 @@ class dense_ae():
         
         attention_model = Model([input_x, masks], [fake_x, imputed_img])
         
-        att_loss = K.mean(mean_squared_error(input_x, fake_x))
+        att_loss = K.mean(mean_squared_error(input_x, imputed_img))
         attention_model.add_loss(att_loss)
         attention_model.compile(optimizer=self.optimizer, )
         attention_model.summary()
         return attention_model
-    
-    def bi_direction_rnn_model(self):
-        input_x = Input(shape=self.img_shape, name='real_data')
-        masks = Input(shape=self.img_shape, name='mask_layer')
-        masked_x = Lambda(function=lambda x: x[0] * x[1] + (1 - x[1]) * -1.,
-                          output_shape=self.img_shape,
-                          name='masked_input')([input_x, masks])
         
-        layer_1 = Bidirectional(LSTM(self.ff_hidden_unit_num, return_sequences=True))(masked_x)
-        layer_hidden = Bidirectional(LSTM(self.ff_hidden_unit_num, return_sequences=True))(layer_1)
-        fake_x = Bidirectional(LSTM(self.ff_hidden_unit_num, return_sequences=True))(layer_hidden)
-        
-        imputed_img = Lambda(lambda x: x[0] * x[1] + (1 - x[0]) * x[2],
-                             output_shape=self.img_shape,
-                             name='imputation_layer')([masks, input_x, fake_x])
-        
-        rnn_model = Model([input_x, masks], [fake_x, imputed_img])
-        
-        att_loss = K.mean(mean_squared_error(input_x, fake_x))
-        rnn_model.add_loss(att_loss)
-        rnn_model.compile(optimizer=self.optimizer, )
-        rnn_model.summary()
-        return rnn_model
-    
     def mask_randomly(self, shape, mode='patch'):
         """
         接收一个三维以上的矩阵，返回已经处理过的矩阵
@@ -459,13 +436,13 @@ class dense_ae():
         r, c = 2, 8
         fig, axs = plt.subplots(r * 3 + 1, c)
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
+            for index, temp in enumerate([x_test, corrupted, masks_gen]):
                 axs[index, j].imshow(temp[j, :, :], cmap='gray')
                 axs[index, j].axis('off')
         for j in range(c):
             axs[3, j].axis('off')
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
+            for index, temp in enumerate([x_test, corrupted, masks_gen]):
                 axs[4 + index, j].imshow(temp[c + j, :, :], cmap='gray')
                 axs[4 + index, j].axis('off')
         fig.suptitle('total_rmse:{:.3f};total_mae:{:.3f}\n'
@@ -496,16 +473,19 @@ class dense_ae():
 
 if __name__ == '__main__':
     def base_func(miss_percent, miss_mode, iterations):
-        ae = dense_ae(miss_mode=miss_mode, missing_percentage=miss_percent)
+        ae = autoencoder_models(miss_mode=miss_mode, missing_percentage=miss_percent)
         ae.train(iterations)
         ae.plot_test_mask(
-            ae.miss_mode + '{:.1%}_{:0>5d}epochs_dense_ae_index.png'.format(ae.missing_percentage, iterations),
+            ae.miss_mode + '{:.1%}_{:0>5d}epochs_attention_index.png'.format(ae.missing_percentage, iterations),
             full=True)
         ae.plot_loss()
     
     
     iterations = 40000
     
-    for miss_mode in ['patch', 'spatial_line', 'temporal_line']:
-        for miss_percent in [0.1 * x for x in range(1, 10)]:
+    for miss_mode in ['patch',
+                      # 'spatial_line',
+                      # 'temporal_line'
+                      ]:
+        for miss_percent in [0.1 * x for x in range(1, 9)]:
             base_func(miss_percent, miss_mode, iterations)

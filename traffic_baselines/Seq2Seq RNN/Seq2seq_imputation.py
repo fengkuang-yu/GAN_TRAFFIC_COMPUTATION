@@ -20,6 +20,7 @@ from keras.models import Model
 from keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
+from tqdm import tqdm
 
 logging.basicConfig(format='%(asctime)s %(message)s',
                     datefmt='%m/%d/%Y %I:%M:%S %p',
@@ -27,7 +28,7 @@ logging.basicConfig(format='%(asctime)s %(message)s',
                     level=logging.ERROR)
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # 使用编号为1，2号的GPU
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 使用编号为1，2号的GPU
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True  # 不全部占满显存, 按需分配
 session = tf.Session(config=config)
@@ -77,7 +78,7 @@ class seq2seq_models():
                              name='imputation_layer')([masks, input_x, fake_res])
         
         attention_model = Model([input_x, masks, time_stamp], [fake_res, imputed_img], name='basic_generator')
-        att_loss = K.mean(mean_squared_error(input_x, fake_res))
+        att_loss = K.mean(mean_squared_error(input_x, imputed_img))
         attention_model.add_loss(att_loss)
         attention_model.compile(optimizer=self.optimizer, )
         attention_model.summary()
@@ -177,13 +178,13 @@ class seq2seq_models():
         r, c = 2, 8
         fig, axs = plt.subplots(r * 3 + 1, c)
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
+            for index, temp in enumerate([x_test, corrupted, masks_gen]):
                 axs[index, j].imshow(temp[j, :, :], cmap='gray')
                 axs[index, j].axis('off')
         for j in range(c):
             axs[3, j].axis('off')
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
+            for index, temp in enumerate([x_test, corrupted, masks_gen]):
                 axs[4 + index, j].imshow(temp[c + j, :, :], cmap='gray')
                 axs[4 + index, j].axis('off')
         fig.suptitle('total_rmse:{:.3f};total_mae:{:.3f}\n'
@@ -202,7 +203,7 @@ class seq2seq_models():
         train_index = self.y_train
         total_epoch = self.epochs if epochs == None else epochs
         
-        for epoch in range(total_epoch):
+        for epoch in tqdm(range(total_epoch)):
             idx = np.random.randint(0, x_train.shape[0], self.batch_size)
             real_images = x_train[idx]
             real_index = train_index[idx]

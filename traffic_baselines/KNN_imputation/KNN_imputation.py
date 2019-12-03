@@ -168,13 +168,13 @@ class KNN_imputation():
         r, c = 2, 8
         fig, axs = plt.subplots(r * 3 + 1, c)
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
+            for index, temp in enumerate([x_test, corrupted, masks_gen]):
                 axs[index, j].imshow(temp[j, :, :], cmap='gray')
                 axs[index, j].axis('off')
         for j in range(c):
             axs[3, j].axis('off')
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
+            for index, temp in enumerate([x_test, corrupted, masks_gen]):
                 axs[4 + index, j].imshow(temp[c + j, :, :], cmap='gray')
                 axs[4 + index, j].axis('off')
         fig.suptitle('total_rmse:{:.3f};total_mae:{:.3f}\n'

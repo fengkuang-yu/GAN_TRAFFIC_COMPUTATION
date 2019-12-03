@@ -20,6 +20,8 @@ logging.basicConfig(format='%(asctime)s %(message)s',
 
 from multiprocessing import Pool
 import matplotlib.pylab as plt
+import tensorflow as tf
+import keras.backend as K
 import numpy as np
 import pandas as pd
 from fancyimpute import MatrixFactorization
@@ -28,7 +30,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 使用编号为1，2号的GPU
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True  # 不全部占满显存, 按需分配
+session = tf.Session(config=config)
+K.set_session(session)
 
 class MF_imputation():
     def __init__(self, missing_percentage=0.8, test_percent=0.15,
