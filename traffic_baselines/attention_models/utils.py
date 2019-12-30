@@ -7,6 +7,7 @@
 import math
 import os
 
+import pandas as pd
 import keras.backend as K
 import matplotlib.pylab as plt
 import numpy as np
@@ -14,16 +15,16 @@ import tensorflow as tf
 
 if 'TF_KERAS' in os.environ and os.environ['TF_KERAS'] != '0':
     from tensorflow.python import keras
-
+    
     TF_KERAS = True
 else:
     import keras
-
+    
     TF_KERAS = False
 
 
 class LayerNormalization(keras.layers.Layer):
-
+    
     def __init__(self,
                  center=True,
                  scale=True,
@@ -64,7 +65,7 @@ class LayerNormalization(keras.layers.Layer):
         self.gamma_constraint = keras.constraints.get(gamma_constraint)
         self.beta_constraint = keras.constraints.get(beta_constraint)
         self.gamma, self.beta = None, None
-
+    
     def get_config(self):
         config = {
             'center': self.center,
@@ -79,13 +80,13 @@ class LayerNormalization(keras.layers.Layer):
         }
         base_config = super(LayerNormalization, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
+    
     def compute_output_shape(self, input_shape):
         return input_shape
-
+    
     def compute_mask(self, inputs, input_mask=None):
         return input_mask
-
+    
     def build(self, input_shape):
         self.input_spec = keras.engine.InputSpec(shape=input_shape)
         shape = input_shape[-1:]
@@ -106,7 +107,7 @@ class LayerNormalization(keras.layers.Layer):
                 name='beta',
             )
         super(LayerNormalization, self).build(input_shape)
-
+    
     def call(self, inputs, training=None):
         mean = K.mean(inputs, axis=-1, keepdims=True)
         variance = K.mean(K.square(inputs - mean), axis=-1, keepdims=True)
@@ -120,16 +121,16 @@ class LayerNormalization(keras.layers.Layer):
 
 
 class PositionEmbedding(keras.engine.Layer):
-
+    
     def __init__(self, size=None, mode='sum', min_timescale=1.0, max_timescale=1.0e4, start_index=0, **kwargs):
         self.size = size
         self.mode = mode
         self.min_timescale = min_timescale
         self.max_timescale = max_timescale
         self.start_index = start_index
-
+        
         super(PositionEmbedding, self).__init__(**kwargs)
-
+    
     def call(self, x, **kwargs):
         min_timescale, max_timescale, start_index = self.min_timescale, self.max_timescale, self.start_index
         batch_size, length, channels = x.shape
@@ -143,12 +144,12 @@ class PositionEmbedding(keras.engine.Layer):
         position_ij = K.dot(position_i, position_j)
         position_ij = K.concatenate([K.sin(position_ij), K.cos(position_ij)], 2)
         position_ij = tf.pad(position_ij, [[0, 0], [0, 0], [0, tf.mod(channels, 2)]])
-
+        
         if self.mode == 'sum':
             return position_ij + x
         elif self.mode == 'concat':
             return K.concatenate([position_ij, x], 2)
-
+    
     def compute_output_shape(self, input_shape):
         if self.mode == 'sum':
             return input_shape
@@ -180,7 +181,7 @@ class FeedForward(keras.layers.Layer):
     # References
         - [Attention is All You Need](https://arxiv.org/pdf/1706.03762.pdf)
     """
-
+    
     def __init__(self,
                  units,
                  activation='relu',
@@ -207,7 +208,7 @@ class FeedForward(keras.layers.Layer):
         self.W1, self.b1 = None, None
         self.W2, self.b2 = None, None
         super(FeedForward, self).__init__(**kwargs)
-
+    
     def get_config(self):
         config = {
             'units': self.units,
@@ -223,13 +224,13 @@ class FeedForward(keras.layers.Layer):
         }
         base_config = super(FeedForward, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
+    
     def compute_output_shape(self, input_shape):
         return input_shape
-
+    
     def compute_mask(self, inputs, input_mask=None):
         return input_mask
-
+    
     def build(self, input_shape):
         feature_dim = int(input_shape[-1])
         self.W1 = self.add_weight(
@@ -263,7 +264,7 @@ class FeedForward(keras.layers.Layer):
                 name='{}_b2'.format(self.name),
             )
         super(FeedForward, self).build(input_shape)
-
+    
     def call(self, x, mask=None, training=None):
         h = K.dot(x, self.W1)
         if self.use_bias:
@@ -273,7 +274,7 @@ class FeedForward(keras.layers.Layer):
         if 0.0 < self.dropout_rate < 1.0:
             def dropped_inputs():
                 return K.dropout(h, self.dropout_rate, K.shape(h))
-
+            
             h = K.in_train_phase(dropped_inputs, h, training=training)
         y = K.dot(h, self.W2)
         if self.use_bias:
@@ -288,7 +289,7 @@ class ScaledDotProductAttention(keras.layers.Layer):
 
     See: https://arxiv.org/pdf/1706.03762.pdf
     """
-
+    
     def __init__(self,
                  return_attention=False,
                  history_only=False,
@@ -303,7 +304,7 @@ class ScaledDotProductAttention(keras.layers.Layer):
         self.supports_masking = True
         self.return_attention = return_attention
         self.history_only = history_only
-
+    
     def get_config(self):
         config = {
             'return_attention': self.return_attention,
@@ -311,7 +312,7 @@ class ScaledDotProductAttention(keras.layers.Layer):
         }
         base_config = super(ScaledDotProductAttention, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
+    
     def compute_output_shape(self, input_shape):
         if isinstance(input_shape, list):
             query_shape, key_shape, value_shape = input_shape
@@ -322,14 +323,14 @@ class ScaledDotProductAttention(keras.layers.Layer):
             attention_shape = query_shape[:2] + (key_shape[1],)
             return [output_shape, attention_shape]
         return output_shape
-
+    
     def compute_mask(self, inputs, mask=None):
         if isinstance(mask, list):
             mask = mask[0]
         if self.return_attention:
             return [mask, None]
         return mask
-
+    
     def call(self, inputs, mask=None, **kwargs):
         if isinstance(inputs, list):
             query, key, value = inputs
@@ -359,7 +360,7 @@ class MultiHeadAttention(keras.layers.Layer):
 
     See: https://arxiv.org/pdf/1706.03762.pdf
     """
-
+    
     def __init__(self,
                  head_num,
                  activation='relu',
@@ -396,11 +397,11 @@ class MultiHeadAttention(keras.layers.Layer):
         self.kernel_constraint = keras.constraints.get(kernel_constraint)
         self.bias_constraint = keras.constraints.get(bias_constraint)
         self.history_only = history_only
-
+        
         self.Wq, self.Wk, self.Wv, self.Wo = None, None, None, None
         self.bq, self.bk, self.bv, self.bo = None, None, None, None
         super(MultiHeadAttention, self).__init__(**kwargs)
-
+    
     def get_config(self):
         config = {
             'head_num': self.head_num,
@@ -416,18 +417,18 @@ class MultiHeadAttention(keras.layers.Layer):
         }
         base_config = super(MultiHeadAttention, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
+    
     def compute_output_shape(self, input_shape):
         if isinstance(input_shape, list):
             q, k, v = input_shape
             return q[:-1] + (v[-1],)
         return input_shape
-
+    
     def compute_mask(self, inputs, input_mask=None):
         if isinstance(input_mask, list):
             return input_mask[0]
         return input_mask
-
+    
     def build(self, input_shape):
         if isinstance(input_shape, list):
             q, k, v = input_shape
@@ -497,7 +498,7 @@ class MultiHeadAttention(keras.layers.Layer):
                 name='%s_bo' % self.name,
             )
         super(MultiHeadAttention, self).build(input_shape)
-
+    
     @staticmethod
     def _reshape_to_batches(x, head_num):
         input_shape = K.shape(x)
@@ -506,7 +507,7 @@ class MultiHeadAttention(keras.layers.Layer):
         x = K.reshape(x, (batch_size, seq_len, head_num, head_dim))
         x = K.permute_dimensions(x, [0, 2, 1, 3])
         return K.reshape(x, (batch_size * head_num, seq_len, head_dim))
-
+    
     @staticmethod
     def _reshape_from_batches(x, head_num):
         input_shape = K.shape(x)
@@ -514,7 +515,7 @@ class MultiHeadAttention(keras.layers.Layer):
         x = K.reshape(x, (batch_size // head_num, head_num, seq_len, feature_dim))
         x = K.permute_dimensions(x, [0, 2, 1, 3])
         return K.reshape(x, (batch_size // head_num, seq_len, feature_dim * head_num))
-
+    
     @staticmethod
     def _reshape_mask(mask, head_num):
         if mask is None:
@@ -523,7 +524,7 @@ class MultiHeadAttention(keras.layers.Layer):
         mask = K.expand_dims(mask, axis=1)
         mask = K.tile(mask, [1, head_num, 1])
         return K.reshape(mask, (-1, seq_len))
-
+    
     def call(self, inputs, mask=None):
         if isinstance(inputs, list):
             q, k, v = inputs
@@ -581,10 +582,10 @@ class SpectralNormalization:
     使用方法：x = SpectralNormalization(Dense(100, activation='relu'))(x)
     连接地址：https://spaces.ac.cn/archives/6311
     """
-
+    
     def __init__(self, layer):
         self.layer = layer
-
+    
     def spectral_norm(self, w, r=5):
         w_shape = K.int_shape(w)
         in_dim = np.prod(w_shape[:-1]).astype(int)
@@ -595,10 +596,10 @@ class SpectralNormalization:
             v = K.l2_normalize(K.dot(u, w))
             u = K.l2_normalize(K.dot(v, K.transpose(w)))
         return K.sum(K.dot(K.dot(u, w), K.transpose(v)))
-
+    
     def spectral_normalization(self, w):
         return w / self.spectral_norm(w)
-
+    
     def __call__(self, inputs):
         with K.name_scope(self.layer.name):
             if not self.layer.built:
@@ -620,7 +621,7 @@ def plot_test(self, file_name=''):
     img_index = np.random.randint(0, self.x_test.shape[0], 100)
     x_test = self.x_test[img_index].reshape(-1, *self.img_shape)
     x_gen = self.generator.predict(x_test)
-
+    
     r, c = 4, 4
     fig, axs = plt.subplots(r, c)
     cnt = 0
@@ -634,7 +635,7 @@ def plot_test(self, file_name=''):
     fig.savefig(os.path.join(os.getcwd(), 'generated_images', file_name + 'GAN_fake.png'))
     # plt.show()
     plt.close()
-
+    
     r, c = 4, 4
     fig, axs = plt.subplots(r, c)
     cnt = 0
@@ -665,6 +666,41 @@ def spectral_norm(w, r=5):
 def spectral_normalization(w, power_num=1):
     assert isinstance(power_num, int)
     return w / spectral_norm(w, power_num)
+
+
+class DataProcess(object):
+    def __init__(self, file_folder_path=None, min_missing_percentage=0.1):
+        self.files_name = self.file_name_reader(file_folder_path)
+        self.data_all = self.data_concat()
+        self.filtered_data = self.data_filter(min_missing_percentage)
+    
+    def file_name_reader(self, file_folder_path=None):
+        current_workspace = os.getcwd() if file_folder_path is None else file_folder_path
+        file_names = list(filter(lambda x: x[-4:] == 'xlsx' and '0' <= x[0] <= '9', os.listdir(current_workspace)))
+        file_full_names = list(map(lambda x: os.path.join(current_workspace, x), file_names))
+        return file_full_names
+    
+    def data_concat(self):
+        data_all = pd.DataFrame()
+        for temp_file_name in self.files_name:
+            temp_file = pd.read_excel(io=temp_file_name, sheetname=2, index_col=0)
+            data_all = pd.concat([data_all, temp_file], axis=0)
+        
+        new_index = pd.to_datetime(data_all.index, format='%Y-%m-%d %H:%M:%S')  # 将index转换为时间戳格式
+        data_all.set_index(new_index)
+        data_all = data_all.sort_index(axis=1)  # 将列名按照大小顺序排序
+        data_all = data_all.fillna(0)
+        data_all.to_csv(os.path.join(os.getcwd(), 'data_all.csv'))  # 文件保存
+        return data_all
+    
+    def data_filter(self, min_miss=0.1):
+        data_all = self.data_all
+        null_counter = pd.isnull(data_all).sum()
+        miss_percentage = null_counter / len(data_all)
+        selected_columns = miss_percentage[miss_percentage < min_miss].index
+        filtered_data_all = data_all.loc[:, selected_columns]
+        filtered_data_all.to_csv(os.path.join(os.getcwd(), 'filtered_data_all.csv'))
+        return filtered_data_all
 
 
 if __name__ == '__main__':
