@@ -138,7 +138,7 @@ class PositionEmbedding(keras.engine.Layer):
         position_i = K.expand_dims(position, 2)
         num_timescales = channels // 2
         log_timescale_increment = (
-                math.log(float(max_timescale) / float(min_timescale)) / (K.cast(num_timescales, float) - 1))
+                K.log(float(max_timescale) / float(min_timescale)) / (K.cast(num_timescales, float) - 1))
         inv_timescales = min_timescale * K.exp(K.cast(K.arange(num_timescales), float) * -log_timescale_increment)
         position_j = K.expand_dims(inv_timescales, 0)
         position_ij = K.dot(position_i, position_j)
