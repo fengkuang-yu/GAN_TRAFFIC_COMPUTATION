@@ -97,7 +97,7 @@ class autoencoder_models():
         temporal_res_trans_1 = attention_block(x=pos_encoding_trans, head_num=self.multi_head_num,
                                                feed_forward_hidden_units=self.ff_hidden_unit_num)
         temporal_res_1 = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
-                                output_shape=self.img_shape[::-1],
+                                output_shape=self.img_shape,
                                 name='transpose_layer_2')(temporal_res_trans_1)  # 将输入转置过来
         
         # 将两个特征图加起来作为后续的网络输入
@@ -472,20 +472,22 @@ class dense_ae():
 
 
 if __name__ == '__main__':
-    def base_func(miss_percent, miss_mode, iterations):
-        ae = autoencoder_models(miss_mode=miss_mode, missing_percentage=miss_percent)
-        ae.train(iterations)
-        ae.plot_test_mask(
-            ae.miss_mode + '{:.1%}_{:0>5d}epochs_attention_index.png'.format(ae.missing_percentage, iterations),
-            full=True)
-        ae.plot_loss()
-    
-    
-    iterations = 40000
-    
-    for miss_mode in ['patch',
-                      # 'spatial_line',
-                      # 'temporal_line'
-                      ]:
-        for miss_percent in [0.1 * x for x in range(1, 9)]:
-            base_func(miss_percent, miss_mode, iterations)
+    # def base_func(miss_percent, miss_mode, iterations):
+    #     ae = autoencoder_models(miss_mode=miss_mode, missing_percentage=miss_percent)
+    #     ae.train(iterations)
+    #     ae.plot_test_mask(
+    #         ae.miss_mode + '{:.1%}_{:0>5d}epochs_attention_index.png'.format(ae.missing_percentage, iterations),
+    #         full=True)
+    #     ae.plot_loss()
+    #
+    #
+    # iterations = 40000
+    #
+    # for miss_mode in ['patch',
+    #                   # 'spatial_line',
+    #                   # 'temporal_line'
+    #                   ]:
+    #     for miss_percent in [0.1 * x for x in range(1, 9)]:
+    #         base_func(miss_percent, miss_mode, iterations)
+    ae = autoencoder_models(miss_mode='patch', missing_percentage=0.3)
+
