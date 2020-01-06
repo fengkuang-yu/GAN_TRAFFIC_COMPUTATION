@@ -88,7 +88,7 @@ class LayerNormalization(keras.layers.Layer):
         return input_mask
     
     def build(self, input_shape):
-        self.input_spec = keras.engine.InputSpec(shape=input_shape)
+        self.input_spec = keras.layers.InputSpec(shape=input_shape)
         shape = input_shape[-1:]
         if self.scale:
             self.gamma = self.add_weight(
@@ -120,7 +120,7 @@ class LayerNormalization(keras.layers.Layer):
         return outputs
 
 
-class PositionEmbedding(keras.engine.Layer):
+class PositionEmbedding(keras.layers.Layer):
     
     def __init__(self, size=None, mode='sum', min_timescale=1.0, max_timescale=1.0e4, start_index=0, **kwargs):
         self.size = size
@@ -143,7 +143,7 @@ class PositionEmbedding(keras.engine.Layer):
         position_j = K.expand_dims(inv_timescales, 0)
         position_ij = K.dot(position_i, position_j)
         position_ij = K.concatenate([K.sin(position_ij), K.cos(position_ij)], 2)
-        position_ij = tf.pad(position_ij, [[0, 0], [0, 0], [0, tf.mod(channels, 2)]])
+        position_ij = tf.pad(position_ij, [[0, 0], [0, 0], [0, channels % 2]])
         
         if self.mode == 'sum':
             return position_ij + x
