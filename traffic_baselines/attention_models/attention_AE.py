@@ -5,6 +5,7 @@
 # software: PyCharm
 
 import os
+import argparse
 
 import matplotlib.pylab as plt
 import numpy as np
@@ -26,24 +27,40 @@ from utils import FeedForward
 from utils import LayerNormalization
 from utils import PositionEmbedding
 
+# 训练环境配置
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 使用编号为1，2号的GPU
-config = tf.ConfigProto()
+config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True  # 不全部占满显存, 按需分配
-session = tf.Session(config=config)
+session = tf.compat.v1.Session(config=config)
 K.set_session(session)
 
+# 超参数传递
+parser = argparse.ArgumentParser(description='training hyper-parameters')
+parser.add_argument("-e", "--epochs", type=int, default=40000, help="训练次数")
+parser.add_argument("-d", "--dataset", default="new", choices=["new", "old"], help="数据集")
+parser.add_argument("-p", "--percent_miss", default=0.3, type=float, help="数据的缺失比例")
+parser.add_argument("-m", "--miss_mode", default="patch", choices=["patch", 'spatial_line', 'temporal_line', "random"],
+                    help="数据的缺失模式")
 
 class autoencoder_models():
-    def __init__(self, epochs=10000, missing_percentage=0.8, test_percent=0.15,
-                 adam_beta_1=0.9, adam_beta_2=0.98, adam_epsilon=10e-9,
-                 data_path=r'traffic_data/data_all.csv', miss_mode='patch'):
+    def __init__(self, epochs=10000, missing_percentage=0.8, test_percent=0.15, selected_cols=None,
+                 adam_beta_1=0.9, adam_beta_2=0.98, adam_epsilon=10e-9, data_sets='new',
+                 data_path=r'traffic_data/filtered_data_all_005.csv', miss_mode='patch'):
+
         # 设置训练超参数
         self.batch_size = 128
-        self.cols = 60
+        self.cols = 85
         self.rows = 60
+
+        # 是否使用两个月的数据集的数据进行训练的过程
+        if data_sets == 'old':
+            data_path = r'traffic_data/data_all.csv'
+            self.cols = 60
+            selected_cols = (80, 140)
+
         self.img_shape = (self.rows, self.cols)
-        self.multi_head_num = 6
+        self.multi_head_num = 5
         self.ff_hidden_unit_num = 1024
         self.epochs = epochs
         self.optimizer = Adam(beta_1=adam_beta_1, beta_2=adam_beta_2, epsilon=adam_epsilon)
@@ -53,7 +70,7 @@ class autoencoder_models():
         self.missing_percentage = missing_percentage
         self.test_percent = test_percent
         self.scalar = MinMaxScaler()
-        self.data = self.load_data(data_path)
+        self.data = self.load_data(data_path, selected_cols=selected_cols)
         self.index = np.array([[x % 288] for x in range(len(self.data))])  # 将标签作为输入矩阵的label，取值为时间戳
         self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
             self.data, self.index, test_size=self.test_percent, random_state=12)
@@ -202,65 +219,76 @@ class autoencoder_models():
         elif mode == 'random':
             pass
     
-    def load_data(self, dir):
+    def load_data(self, dir, time_dim=60, selected_cols=None):
+        """
+        从csv文件中提取序列数据
+        :param dir: csv文件的位置
+        :param selected_cols: [start:end)选中的列
+        :return:
+        """
         # 从excel表中选出需要的数据
         traffic_data = pd.read_csv(dir, index_col=0)
-        data = traffic_data.values[:, 80: 140]  # 选择数据
-        time_steps = self.cols if self.cols else 1
-        
+        traffic_data = traffic_data.fillna(0)
+        if selected_cols is None:
+            selected_data = traffic_data.values
+        else:
+            selected_data = traffic_data.values[:, selected_cols[0]: selected_cols[1]]  # 选择数据
+        time_steps = time_dim
+        size = selected_data.shape
+
         # 数据处理
-        size = data.shape
-        data = np.array(data)
+        # selected_data = self.scalar.fit_transform(selected_data)
         reshaped_data = np.zeros((size[0] - time_steps + 1, size[1] * time_steps))
         for i in range(size[0] - time_steps + 1):
-            reshaped_data[i, :] = data[i:i + time_steps, :].flatten()
-        
-        # data = self.data_pro(data, time_steps=60)
+            reshaped_data[i, :] = selected_data[i:i + time_steps, :].flatten()
+
         data = self.scalar.fit_transform(reshaped_data)
-        data = data.reshape(-1, *self.img_shape)
+        data = data.reshape((-1, time_dim, size[1]))
         return data
     
     def plot_test_mask(self, file_name, full=False):
         x_test = self.X_test
-        test_index = self.y_test
+        time_stamp = self.y_test
         idx = np.random.randint(0, 100, self.batch_size)
-        x_test = x_test[idx] if not full else x_test
-        index = test_index[idx] if not full else test_index
-        
+
+        # 数据输入
+        x_test = x_test[idx] if not full else x_test  # 如果full有值的话，计算全部样本的误差
+        time_stamp = time_stamp[idx] if not full else time_stamp
         masks = self.mask_randomly(x_test.shape, mode=self.miss_mode)
+
         corrupted = x_test * masks
-        
-        gen_imgs, masks_gen = self.attention_model.predict([x_test, masks, index], batch_size=self.batch_size)
+
+        gen_imgs, masks_gen = self.attention_model.predict([x_test, masks, time_stamp], batch_size=self.batch_size)
         x_flatten = x_test.reshape((-1, self.rows * self.cols))
         g_flatten = gen_imgs.reshape((-1, self.rows * self.cols))
         m_flatten = masks_gen.reshape((-1, self.rows * self.cols))
         x_flatten = self.scalar.inverse_transform(x_flatten)
         g_flatten = self.scalar.inverse_transform(g_flatten)
         m_flatten = self.scalar.inverse_transform(m_flatten)
-        
+
         # 生成样本的误差
         total_rmse = np.sqrt(np.sum(np.power(g_flatten - x_flatten, 2)) / np.prod(x_flatten.shape))
         total_mae = np.sum(np.abs(g_flatten - x_flatten)) / np.prod(x_flatten.shape)
-        
+
         # 填充部分的误差
         masks_rmse = np.sqrt(np.sum(np.power(m_flatten - x_flatten, 2)) / np.sum(1 - masks))
         masks_mae = np.sum(np.abs(m_flatten - x_flatten)) / np.sum(1 - masks)
-        
+
         r, c = 2, 8
-        fig, axs = plt.subplots(r * 3 + 1, c)
+        fig, axs = plt.subplots(r * 4 + 1, c)
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
+            for index, temp in enumerate([x_test, corrupted, gen_imgs, masks_gen]):
                 axs[index, j].imshow(temp[j, :, :], cmap='gray')
                 axs[index, j].axis('off')
         for j in range(c):
-            axs[3, j].axis('off')
+            axs[4, j].axis('off')
         for j in range(c):
-            for index, temp in enumerate([x_test, corrupted, gen_imgs]):
-                axs[4 + index, j].imshow(temp[c + j, :, :], cmap='gray')
-                axs[4 + index, j].axis('off')
+            for index, temp in enumerate([x_test, corrupted, gen_imgs, masks_gen]):
+                axs[5 + index, j].imshow(temp[c + j, :, :], cmap='gray')
+                axs[5 + index, j].axis('off')
         fig.suptitle('total_rmse:{:.3f};total_mae:{:.3f}\n'
                      'masks_rmse:{:.3f};masks_mae:{:.3f}'.format(total_rmse, total_mae, masks_rmse, masks_mae))
-        fig.savefig(os.path.join(os.getcwd(), 'generated_images', 'ae', file_name), dpi=300)
+        fig.savefig(os.path.join(os.getcwd(), 'generated_images', 'unsupervised_saaae', file_name), dpi=300)
         plt.close()
     
     def train(self, epochs=20000):
@@ -283,6 +311,10 @@ class autoencoder_models():
                 # )
                 # print('loss:{}'.format(loss))
                 self.loss_list.append((epoch, loss))
+
+            if epoch % 500 == 0:
+                self.plot_test_mask(self.miss_mode + '{:.1%}_{:0>5d}epochs.png'.format(
+                    self.missing_percentage, epoch), full=True)
     
     def plot_loss(self):
         loss = self.loss_list
@@ -489,5 +521,7 @@ if __name__ == '__main__':
     #                   ]:
     #     for miss_percent in [0.1 * x for x in range(1, 9)]:
     #         base_func(miss_percent, miss_mode, iterations)
-    ae = autoencoder_models(miss_mode='patch', missing_percentage=0.3)
+    args = parser.parse_args()
+    ae = autoencoder_models(miss_mode=args.miss_mode, missing_percentage=args.percent_miss, data_sets=args.dataset)
+    ae.train(args.epochs)
 

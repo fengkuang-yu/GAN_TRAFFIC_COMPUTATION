@@ -15,7 +15,6 @@
 5. 添加时间和空间的两种交通表示
 6. 添加重构误差为l1损失
 
-
 """
 
 import os
@@ -53,9 +52,9 @@ config.gpu_options.allow_growth = True  # 不全部占满显存, 按需分配
 session = tf.Session(config=config)
 K.set_session(session)
 
+
 # 适用于tensorflow 2.+版本
 # tf.config.gpu.set_per_process_memory_growth(enabled=True)
-
 
 class AttentionGAN():
     def __init__(self, train_data_path):
@@ -73,8 +72,8 @@ class AttentionGAN():
         self.critic_loss_list, self.generator_loss_list, self.generator_valid = [], [], []
 
         # 优化的超参数
-        self.reconstruct_weight = 1  # 重构误差在生成器中的占比
-        self.power_iter_num = 1 # 谱归一化中的迭代次数
+        self.reconstruct_weight = 100  # 重构误差在生成器中的占比
+        self.power_iter_num = 1  # 谱归一化中的迭代次数
 
         # 数据处理相关
         self.missing_percentage = 0.3  # 缺失面积百分比
@@ -109,7 +108,7 @@ class AttentionGAN():
         feed_forward_res_1 = Add()([feed_forward, layer_normal])
         return feed_forward_res_1
 
-    def positional_encoding(self, x:np.ndarray, start_index, mode='single', min_timescale=1.0, max_timescale=1.0e4):
+    def positional_encoding(self, x: np.ndarray, start_index, mode='single', min_timescale=1.0, max_timescale=1.0e4):
         """
         按照输入的numpy矩阵返回对应的位置编码
         :param x:
@@ -150,19 +149,10 @@ class AttentionGAN():
         生成器的构建
         :return:
         """
-        input_x = Input(shape=self.img_shape, name='real_input')
-        masks_x = Input(shape=self.img_shape, name='masks')
-        position = Input(shape=self.img_shape, name='position')
+        input_x = Input(shape=self.img_shape, name='img_input')
 
-        # 缺失部分按-1.处理
-        input_masked_x_minus = Lambda(function=lambda x: x[0] * x[1],
-                                      output_shape=self.img_shape,
-                                      name='masked_input')([input_x, masks_x])
-
-        # channel—1 以不同的空间点的交通流量信息作为输入
-
-        positioned_input = Add()([input_masked_x_minus, position])
-        feed_forward_res_1 = self.attention_block(positioned_input,
+        # channel—1 以不同的空间点的交通流量作为输入
+        feed_forward_res_1 = self.attention_block(input_x,
                                                   kernel_constraint=spectral_normalization,
                                                   head_num=self.multi_head_num,
                                                   feed_forward_hidden_units=self.ff_hidden_unit_num)
@@ -170,9 +160,9 @@ class AttentionGAN():
         # channel—2 以不同的时间点的交通流量作为输入
         input_masked_trans = Lambda(function=lambda x: K.permute_dimensions(x, [0, 2, 1]),
                                     output_shape=self.img_shape[::-1],
-                                    name='transpose_layer_1')(input_masked_x_minus)  # 将输入时间和空间维度对调
-        positioned_trans = PositionEmbedding()(input_masked_trans)  # 这里的顺序是相对顺序，检测器之间的顺序
-        feed_forward_res_trans = self.attention_block(positioned_trans,
+                                    name='transpose_layer_1')(input_x)  # 将输入时间和空间维度对调
+
+        feed_forward_res_trans = self.attention_block(input_masked_trans,
                                                       kernel_constraint=spectral_normalization,
                                                       head_num=self.multi_head_num,
                                                       feed_forward_hidden_units=self.ff_hidden_unit_num)
@@ -189,11 +179,7 @@ class AttentionGAN():
 
         fake_res = Activation('sigmoid')(feed_forward_res_3)
 
-        imputed_img = Lambda(function=lambda x: x[0] * x[1] + (1 - x[0]) * x[2],
-                             output_shape=self.img_shape,
-                             name='imputation_layer')([masks_x, input_x, fake_res])
-
-        attention_model = Model([input_x, masks_x, position], [fake_res, imputed_img], name='basic_generator')
+        attention_model = Model(input_x, fake_res, name='basic_generator')
         return attention_model
 
     def build_critic(self):
@@ -214,7 +200,6 @@ class AttentionGAN():
                                                   head_num=self.multi_head_num,
                                                   feed_forward_hidden_units=self.ff_hidden_unit_num)
 
-
         flatten_1 = Flatten()(feed_forward_res_2)
         dense_1 = Dense(self.latent_dim, kernel_constraint=spectral_normalization)(flatten_1)
         relu_1 = LeakyReLU()(dense_1)
@@ -229,18 +214,26 @@ class AttentionGAN():
         self.generator.trainable = False
         self.critic.trainable = True
         x_real = Input(shape=self.img_shape, name='real_image')
-        masks = Input(shape=self.img_shape, name='mask_layer')
+        x_masks = Input(shape=self.img_shape, name='mask_layer')
         position = Input(shape=self.img_shape, name='position')
 
-        # index_time = Input(shape=(1,), name='time_stamp')
-        x_fake, x_imputed = self.generator([x_real, masks, position])  # todo: 修复后的图片作为损失计算目标
+        # 缺失部分按-1.处理
+        input_masked_x_minus = Lambda(function=lambda x: x[0] * x[1] + x[1] - 1 + x[2],
+                                      output_shape=self.img_shape,
+                                      name='masked_input')([x_real, x_masks, position])
+
+        x_fake = self.generator(input_masked_x_minus)  # todo: 修复后的图片作为损失计算目标
+
+        x_imputed = Lambda(function=lambda x: x[0] * x[1] + (1 - x[0]) * x[2],
+                           output_shape=self.img_shape,
+                           name='imputation_layer')([x_masks, x_real, x_fake])
 
         rec_valid, rec_d_llike = self.critic(x_imputed)
         real_valid, real_d_llike = self.critic(x_real)
 
         critic_loss = Lambda(self.critic_loss, output_shape=(1,), name='critic_loss')([rec_valid, real_valid])
 
-        critic_trainer = Model([x_real, masks, position], [critic_loss], name='discriminator')
+        critic_trainer = Model([x_real, x_masks, position], [critic_loss], name='discriminator')
         critic_trainer.add_loss(critic_loss)
         critic_trainer.compile(optimizer=self.critic_optimizer)
         critic_trainer.summary()
@@ -250,21 +243,28 @@ class AttentionGAN():
         ### build generator ###
         self.generator.trainable = True
         self.critic.trainable = False
-        real_img = Input(shape=self.img_shape, name='real_image')
-        masks = Input(shape=self.img_shape, name='masks')
+        x_real = Input(shape=self.img_shape, name='real_image')
+        x_masks = Input(shape=self.img_shape, name='mask_layer')
         position = Input(shape=self.img_shape, name='position')
 
-        # time_stamps = Input(shape=(1,), name='time_stamps')
+        # 缺失部分按-1.处理
+        input_masked_x_minus = Lambda(function=lambda x: x[0] * x[1] + x[1] - 1 + x[2],
+                                      output_shape=self.img_shape,
+                                      name='masked_input')([x_real, x_masks, position])
 
-        fake_img, imputed_img = self.generator([real_img, masks, position])  # 返回两个值，第一个是纯生成的图，第二个是修复图
-        real_valid_critic, real_hidden_critic = self.critic(real_img)
-        fake_valid_critic, fake_hidden_critic = self.critic(imputed_img)
+        x_fake = self.generator(input_masked_x_minus)  # todo: 修复后的图片作为损失计算目标
+
+        x_imputed = Lambda(function=lambda x: x[0] * x[1] + (1 - x[0]) * x[2],
+                           output_shape=self.img_shape,
+                           name='imputation_layer')([x_masks, x_real, x_fake])
+
+        rec_valid, rec_d_llike = self.critic(x_imputed)
+        real_valid, real_d_llike = self.critic(x_real)
 
         gen_loss = Lambda(self.generative_loss, output_shape=(1,),
-                          name='generative_loss')([real_img, fake_img, real_hidden_critic, fake_hidden_critic])  # fake_img
+                          name='generative_loss')([x_real, x_fake, real_d_llike, rec_d_llike])  # fake_img
 
-        generator_trainer = Model([real_img, masks, position], [gen_loss, fake_valid_critic],
-                                  name='generator_trainer')
+        generator_trainer = Model([x_real, x_masks, position], [gen_loss], name='generator_trainer')
         generator_trainer.add_loss(gen_loss)
         generator_trainer.compile(optimizer=self.generator_optimizer)
         generator_trainer.summary()
@@ -347,45 +347,47 @@ class AttentionGAN():
         x_test = self.X_test
         time_stamp = self.y_test
         idx = np.random.randint(0, 100, self.batch_size)
+
+        # 数据输入
         x_test = x_test[idx] if not full else x_test  # 如果full有值的话，计算全部样本的误差
         time_stamp = time_stamp[idx] if not full else time_stamp
-
         masks = self.mask_randomly(x_test.shape, mode=self.miss_mode)
+
         corrupted = x_test * masks
         index = self.positional_encoding(x_test, time_stamp)
-        gen_img, imputed_img = self.generator.predict([x_test, masks, index], batch_size=self.batch_size)
+        gen_imgs, imputed_img = self.generator.predict([x_test, masks], batch_size=self.batch_size)
 
-        x_test = self.scalar.inverse_transform(x_test.reshape((-1, self.spatial_dim)))
-        gen_img = self.scalar.inverse_transform(gen_img.reshape((-1, self.spatial_dim)))
-        imputed_img = self.scalar.inverse_transform(imputed_img.reshape((-1, self.spatial_dim)))
+        x_flatten = x_test.reshape((-1, self.spatial_dim * self.time_dim))
+        g_flatten = gen_imgs.reshape((-1, self.spatial_dim * self.time_dim))
+        m_flatten = imputed_img.reshape((-1, self.spatial_dim * self.time_dim))
 
-        x_real_img = x_test.reshape((-1, *self.img_shape))
-        g_fake_img = gen_img.reshape((-1, *self.img_shape))
-        m_fake_img = imputed_img.reshape((-1, *self.img_shape))
+        x_flatten = self.scalar.inverse_transform(x_flatten)
+        g_flatten = self.scalar.inverse_transform(g_flatten)
+        m_flatten = self.scalar.inverse_transform(m_flatten)
 
         # 生成样本的误差
-        total_rmse = np.sqrt(np.sum(np.power(g_fake_img - x_real_img, 2)) / np.prod(x_real_img.shape))
-        total_mae = np.sum(np.abs(g_fake_img - x_real_img)) / np.prod(x_real_img.shape)
+        total_rmse = np.sqrt(np.sum(np.power(g_flatten - x_flatten, 2)) / np.prod(x_flatten.shape))
+        total_mae = np.sum(np.abs(g_flatten - x_flatten)) / np.prod(x_flatten.shape)
 
         # 填充部分的误差
-        masks_rmse = np.sqrt(np.sum(np.power(m_fake_img - x_real_img, 2)) / np.sum(1 - masks))
-        masks_mae = np.sum(np.abs(m_fake_img - x_real_img)) / np.sum(1 - masks)
+        masks_rmse = np.sqrt(np.sum(np.power(m_flatten - x_flatten, 2)) / np.sum(1 - masks))
+        masks_mae = np.sum(np.abs(m_flatten - x_flatten)) / np.sum(1 - masks)
 
         r, c = 2, 8
         fig, axs = plt.subplots(r * 4 + 1, c)
         for j in range(c):
-            for index, temp in enumerate([x_real_img, corrupted, g_fake_img, m_fake_img]):
+            for index, temp in enumerate([x_test, corrupted, gen_imgs, imputed_img]):
                 axs[index, j].imshow(temp[j, :, :], cmap='gray')
                 axs[index, j].axis('off')
         for j in range(c):
             axs[4, j].axis('off')
         for j in range(c):
-            for index, temp in enumerate([x_real_img, corrupted, g_fake_img, m_fake_img]):
+            for index, temp in enumerate([x_test, corrupted, gen_imgs, imputed_img]):
                 axs[5 + index, j].imshow(temp[c + j, :, :], cmap='gray')
                 axs[5 + index, j].axis('off')
         fig.suptitle('total_rmse:{:.3f};total_mae:{:.3f}\n'
                      'masks_rmse:{:.3f};masks_mae:{:.3f}'.format(total_rmse, total_mae, masks_rmse, masks_mae))
-        fig.savefig(os.path.join(os.getcwd(), 'generated_images', 'gan_backprop_with_imputed', file_name), dpi=300)
+        fig.savefig(os.path.join(os.getcwd(), 'generated_images', 'unsupervised_saaae', file_name), dpi=300)
         plt.close()
 
     def load_data(self, dir, time_dim=60, selected_cols=None):
@@ -406,12 +408,13 @@ class AttentionGAN():
         size = selected_data.shape
 
         # 数据处理
-        selected_data = self.scalar.fit_transform(selected_data)
+        # selected_data = self.scalar.fit_transform(selected_data)
         reshaped_data = np.zeros((size[0] - time_steps + 1, size[1] * time_steps))
         for i in range(size[0] - time_steps + 1):
             reshaped_data[i, :] = selected_data[i:i + time_steps, :].flatten()
 
-        data = reshaped_data.reshape((-1, time_dim, size[1]))
+        data = self.scalar.fit_transform(reshaped_data)
+        data = data.reshape((-1, time_dim, size[1]))
         return data
 
     def train(self, epochs=None):
@@ -426,9 +429,9 @@ class AttentionGAN():
             real_index = train_index[idx]
             pos_enc = self.positional_encoding(real_images, start_index=real_index, mode='single')
             # 判别器训练
-            critic_loss = self.critic_trainer.train_on_batch([real_images, masks, pos_enc], None)
+            critic_loss = self.critic_trainer.train_on_batch([real_images, masks], None)
             # 生成器训练
-            generator_loss = self.generator_trainer.train_on_batch([real_images, masks, pos_enc], None)
+            generator_loss = self.generator_trainer.train_on_batch([real_images, masks], None)
 
             if epoch % 10 == 0:
                 self.critic_loss_list.append((epoch, critic_loss))
@@ -436,8 +439,8 @@ class AttentionGAN():
                 # self.generator_valid.append((epoch, np.mean(gen_valid)))
 
             if epoch % 500 == 0:
-                ae_gan.plot_test_mask(ae_gan.miss_mode + 'u_net_GAN_new_{:.1%}_{:0>5d}epochs.png'.format(
-                    ae_gan.missing_percentage, epoch), full=True)
+                self.plot_test_mask(self.miss_mode + '{:.1%}_{:0>5d}epochs.png'.format(
+                    self.missing_percentage, epoch), full=True)
             #     self.plot_test_mask(
             #         self.miss_mode + '{:.1%}_{:0>5d}epochs_gen.png'.format(self.missing_percentage, epoch))
             # print('\ngenerator_loss:{};\ncritic_loss:{}'.format(generator_loss, critic_loss))
